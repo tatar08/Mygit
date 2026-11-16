@@ -1,5 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { getPasscode, PASSCODE_COOKIE, verifyAccessToken } from "./lib/passcode";
+import {
+  PASSCODE_COOKIE,
+  PASSCODE_OVERRIDE_COOKIE,
+  readOverridePasscode,
+  verifyAccessJwt,
+} from "./lib/passcode";
 
 const PUBLIC_PATHS = [
   "/unlock",
@@ -12,9 +17,6 @@ const PUBLIC_PATHS = [
 ];
 
 export async function middleware(req: NextRequest) {
-  const passcode = getPasscode();
-  if (!passcode) return NextResponse.next();
-
   const { pathname, search } = req.nextUrl;
 
   if (
@@ -25,7 +27,12 @@ export async function middleware(req: NextRequest) {
   }
 
   const token = req.cookies.get(PASSCODE_COOKIE)?.value;
-  const ok = await verifyAccessToken(token);
+  const overrideCode = await readOverridePasscode(
+    req.cookies.get(PASSCODE_OVERRIDE_COOKIE)?.value,
+  );
+
+  // Verify JWT signature & expiration (and match override passcode if user changed it in browser)
+  const ok = await verifyAccessJwt(token, overrideCode ?? undefined);
   if (ok) return NextResponse.next();
 
   if (pathname.startsWith("/api/")) {

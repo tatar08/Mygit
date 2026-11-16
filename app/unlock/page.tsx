@@ -1,7 +1,14 @@
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { getPasscode, PASSCODE_COOKIE, verifyAccessToken } from "@/lib/passcode";
+import { getSetting } from "@/lib/db";
+import {
+  getEnvPasscode,
+  PASSCODE_COOKIE,
+  PASSCODE_OVERRIDE_COOKIE,
+  readOverridePasscode,
+  verifyAccessJwt,
+} from "@/lib/passcode";
 import { UnlockClient } from "./unlock-client";
 
 export const dynamic = "force-dynamic";
@@ -19,14 +26,13 @@ export default async function UnlockPage({
   const { next } = await searchParams;
   const safeNext = next && next.startsWith("/") && !next.startsWith("//") ? next : "/";
 
-  const passcode = getPasscode();
-  if (!passcode) {
-    redirect(safeNext);
-  }
-
   const store = await cookies();
+  const dbCode = await getSetting("site_passcode");
+  const overrideCode = await readOverridePasscode(store.get(PASSCODE_OVERRIDE_COOKIE)?.value);
+  const passcode = dbCode || overrideCode || getEnvPasscode();
+
   const token = store.get(PASSCODE_COOKIE)?.value;
-  if (await verifyAccessToken(token)) {
+  if (await verifyAccessJwt(token, passcode)) {
     redirect(safeNext);
   }
 

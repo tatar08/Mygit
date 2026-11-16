@@ -125,6 +125,11 @@ const SCHEMA = `
     created_at INTEGER NOT NULL,
     expires_at INTEGER NOT NULL     -- deleted after this; nothing about a chat is kept longer
   );
+  CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
 `;
 
 // One connection per server process. Kept on globalThis because dev hot reloads re-run this module,
@@ -203,6 +208,24 @@ function db(): Promise<Client | null> {
 
 export async function isDbAvailable(): Promise<boolean> {
   return Boolean(await db());
+}
+
+export async function getSetting(key: string): Promise<string | null> {
+  return safely(null, async (c) => {
+    const res = await c.execute({ sql: "SELECT value FROM settings WHERE key = ?", args: [key] });
+    return res.rows[0] ? String(res.rows[0].value) : null;
+  });
+}
+
+export async function setSetting(key: string, value: string): Promise<boolean> {
+  return safely(false, async (c) => {
+    await c.execute({
+      sql: `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+      args: [key, value, Date.now()],
+    });
+    return true;
+  });
 }
 
 // For what must not happen without the database, like spending on chat (lib/budget.ts): it throws instead of

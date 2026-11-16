@@ -231,8 +231,157 @@ export function NavLinks({ repo, stars, extension }: { repo: string | null; star
           </a>
         )}
         <LanguageToggle />
+        <PasscodeButton />
       </nav>
     </>
+  );
+}
+
+export function PasscodeButton() {
+  const [open, setOpen] = useState(false);
+  const { t } = useI18n();
+
+  return (
+    <>
+      <button
+        type="button"
+        className="nav-passcode-btn"
+        onClick={() => setOpen(true)}
+        title={t("passcodeModalTitle")}
+        aria-label={t("passcodeModalTitle")}
+      >
+        🔑
+      </button>
+      {open && <PasscodeModal onClose={() => setOpen(false)} />}
+    </>
+  );
+}
+
+function PasscodeModal({ onClose }: { onClose: () => void }) {
+  const router = useRouter();
+  const { t } = useI18n();
+  const [currentPasscode, setCurrentPasscode] = useState("");
+  const [newPasscode, setNewPasscode] = useState("");
+  const [confirmPasscode, setConfirmPasscode] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [locking, setLocking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  const handleChangePasscode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setSuccess(null);
+
+    if (newPasscode.trim() !== confirmPasscode.trim()) {
+      setError(t("passcodeMismatch"));
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const res = await fetch("/api/auth/passcode", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          currentPasscode: currentPasscode.trim(),
+          newPasscode: newPasscode.trim(),
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error || "Failed to update passcode");
+        return;
+      }
+      setCurrentPasscode("");
+      setNewPasscode("");
+      setConfirmPasscode("");
+      setSuccess(
+        data.persistedToDb
+          ? t("passcodeChanged")
+          : `${t("passcodeChanged")} — ${t("passcodeLocalNote")}`,
+      );
+    } catch {
+      setError("Failed to update passcode");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleLockNow = async () => {
+    setLocking(true);
+    try {
+      await fetch("/api/auth/passcode", { method: "DELETE" });
+      onClose();
+      router.replace("/unlock");
+      router.refresh();
+    } finally {
+      setLocking(false);
+    }
+  };
+
+  return (
+    <div className="add-modal-backdrop" onClick={onClose}>
+      <div className="add-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+        <div className="add-modal-head">
+          <h2>🔑 {t("passcodeModalTitle")}</h2>
+          <button type="button" className="add-modal-close" onClick={onClose} aria-label="Close">
+            ×
+          </button>
+        </div>
+
+        <form onSubmit={handleChangePasscode} className="add-modal-form">
+          <input
+            type="password"
+            value={currentPasscode}
+            onChange={(e) => setCurrentPasscode(e.target.value)}
+            placeholder={t("currentPasscode")}
+            className="add-modal-input"
+            required
+          />
+          <input
+            type="password"
+            value={newPasscode}
+            onChange={(e) => setNewPasscode(e.target.value)}
+            placeholder={t("newPasscode")}
+            className="add-modal-input"
+            minLength={4}
+            required
+          />
+          <input
+            type="password"
+            value={confirmPasscode}
+            onChange={(e) => setConfirmPasscode(e.target.value)}
+            placeholder={t("confirmPasscode")}
+            className="add-modal-input"
+            minLength={4}
+            required
+          />
+
+          {error && <p className="add-modal-error">{error}</p>}
+          {success && <p className="passcode-success">{success}</p>}
+
+          <div className="add-modal-actions" style={{ justifyContent: "space-between", flexWrap: "wrap" }}>
+            <button
+              type="button"
+              className="btn btn-sm passcode-lock-btn"
+              onClick={handleLockNow}
+              disabled={locking}
+            >
+              {locking ? t("locking") : t("lockNow")}
+            </button>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button type="button" className="btn btn-sm" onClick={onClose}>
+                {t("cancel")}
+              </button>
+              <button type="submit" className="btn btn-go btn-sm" disabled={saving}>
+                {saving ? t("savingPasscode") : t("savePasscode")}
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
   );
 }
 

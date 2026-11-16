@@ -2235,3 +2235,39 @@ button.fb-media { width: 100%; padding: 0; border: 0; border-block: 1.5px solid 
   .unlock-pin-row { gap: 6px; }
   .unlock-pin-box { width: 40px; height: 48px; font-size: 20px; }
 }
+.nav-passcode-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  width: 34px;
+  border: 1.5px solid var(--ink);
+  border-radius: 8px;
+  background: var(--sheet);
+  box-shadow: 2px 2px 0 var(--ink);
+  cursor: pointer;
+  font-size: 14px;
+  transition: transform 0.1s var(--ease), box-shadow 0.1s var(--ease);
+}
+.nav-passcode-btn:hover {
+  background: var(--paper);
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0 var(--ink);
+}
+.passcode-success {
+  margin: 0;
+  padding: 9px 12px;
+  border-radius: 8px;
+  background: #dcfce7;
+  border: 1.5px solid #22c55e;
+  color: #15803d;
+  font: 600 13px var(--sans);
+}
+.passcode-lock-btn {
+  background: #fee2e2;
+  color: #b91c1c;
+  border: 1.5px solid #ef4444;
+}
+.passcode-lock-btn:hover {
+  background: #fecaca;
+}
