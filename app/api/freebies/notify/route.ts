@@ -1,21 +1,18 @@
 import { NextResponse } from "next/server";
-import { getSetting, isDbAvailable, markFreebiesNotified, setSetting, type FreebieRecord } from "@/lib/db";
+import { isDbAvailable, markFreebiesNotified, type FreebieRecord } from "@/lib/db";
 import { sendLineMessage, sendWebhookMessage } from "@/lib/line";
-
-const KEY_LINE_TOKEN = "notify_line_token";
-const KEY_LINE_TARGET = "notify_line_target";
-const KEY_WEBHOOK = "notify_webhook_url";
+import { getSecret, saveSecrets, SECRETS_COOKIE } from "@/lib/secrets";
 
 async function getConfig() {
-  const [dbToken, dbTarget, dbWebhook] = await Promise.all([
-    getSetting(KEY_LINE_TOKEN),
-    getSetting(KEY_LINE_TARGET),
-    getSetting(KEY_WEBHOOK),
+  const [lineToken, lineTargetId, webhookUrl] = await Promise.all([
+    getSecret("line_channel_token"),
+    getSecret("line_target_id"),
+    getSecret("webhook_url"),
   ]);
   return {
-    lineToken: dbToken || process.env.LINE_CHANNEL_ACCESS_TOKEN?.trim() || "",
-    lineTargetId: dbTarget || process.env.LINE_TARGET_ID?.trim() || "",
-    webhookUrl: dbWebhook || process.env.FREEBIE_WEBHOOK_URL?.trim() || "",
+    lineToken: lineToken || "",
+    lineTargetId: lineTargetId || "",
+    webhookUrl: webhookUrl || "",
   };
 }
 
@@ -32,13 +29,20 @@ export async function GET() {
 export async function PATCH(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
-    const dbAvailable = await isDbAvailable();
-    if (dbAvailable) {
-      if (typeof body.lineToken === "string") await setSetting(KEY_LINE_TOKEN, body.lineToken.trim());
-      if (typeof body.lineTargetId === "string") await setSetting(KEY_LINE_TARGET, body.lineTargetId.trim());
-      if (typeof body.webhookUrl === "string") await setSetting(KEY_WEBHOOK, body.webhookUrl.trim());
-    }
-    return NextResponse.json({ ok: true, persistedToDb: dbAvailable });
+    const { dbAvailable, encryptedCookieValue } = await saveSecrets({
+      ...(typeof body.lineToken === "string" ? { line_channel_token: body.lineToken } : {}),
+      ...(typeof body.lineTargetId === "string" ? { line_target_id: body.lineTargetId } : {}),
+      ...(typeof body.webhookUrl === "string" ? { webhook_url: body.webhookUrl } : {}),
+    });
+    const res = NextResponse.json({ ok: true, persistedToDb: dbAvailable });
+    res.cookies.set(SECRETS_COOKIE, encryptedCookieValue, {
+      httpOnly: true,
+      sameSite: "lax",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 90,
+      secure: process.env.NODE_ENV === "production",
+    });
+    return res;
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "Failed to save notification settings";
     return NextResponse.json({ error: msg }, { status: 500 });
@@ -107,3 +111,4 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
+

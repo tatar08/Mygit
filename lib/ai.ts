@@ -1,21 +1,34 @@
+import { getSecret } from "./secrets";
+
 export type AiResult = {
   text: string;
   provider: "gemini" | "ollama";
 };
 
-export function hasAiConfigured(): boolean {
-  return Boolean(process.env.GEMINI_API_KEY?.trim() || process.env.OLLAMA_URL?.trim());
+export async function hasAiConfigured(): Promise<boolean> {
+  const [gemini, ollama] = await Promise.all([
+    getSecret("gemini_api_key"),
+    getSecret("ollama_url"),
+  ]);
+  return Boolean(gemini || ollama);
+}
+
+function sanitizeError(msg: string): string {
+  return msg.replace(/([?&]key=)[^&\s]+/gi, "$1[REDACTED]");
 }
 
 export async function askAiText(
   prompt: string,
   opts: { system?: string; json?: boolean; temperature?: number } = {},
 ): Promise<AiResult> {
-  const geminiKey = process.env.GEMINI_API_KEY?.trim();
-  const ollamaUrl = process.env.OLLAMA_URL?.trim();
+  const [geminiKey, geminiModel, ollamaUrl] = await Promise.all([
+    getSecret("gemini_api_key"),
+    getSecret("gemini_model"),
+    getSecret("ollama_url"),
+  ]);
 
   if (geminiKey) {
-    const model = process.env.GEMINI_MODEL?.trim() || "gemini-2.5-flash";
+    const model = geminiModel || "gemini-2.5-flash";
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(geminiKey)}`;
 
     const body: Record<string, unknown> = {
@@ -38,7 +51,7 @@ export async function askAiText(
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       const msg = data?.error?.message || `Gemini API error (${res.status})`;
-      throw new Error(msg);
+      throw new Error(sanitizeError(msg));
     }
 
     const text =
@@ -67,7 +80,7 @@ export async function askAiText(
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      throw new Error(data?.error || `Ollama error (${res.status})`);
+      throw new Error(sanitizeError(data?.error || `Ollama error (${res.status})`));
     }
     const text = data?.message?.content?.trim() || "";
     if (!text) throw new Error("Empty response from Ollama");
@@ -75,7 +88,7 @@ export async function askAiText(
   }
 
   throw new Error(
-    "AI is not configured. Add GEMINI_API_KEY (free tier at aistudio.google.com) to .env.local or Vercel Environment Variables.",
+    "ยังไม่ได้ตั้งค่า AI API Key — กรุณาไปที่เมนู ⚙️ ตั้งค่า เพื่อใส่ GEMINI_API_KEY (ฟรีที่ aistudio.google.com)",
   );
 }
 

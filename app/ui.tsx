@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { compactCount } from "@/lib/format";
-import { parseRepoUrl } from "@/lib/github";
+import { parseRepoUrl } from "@/lib/repo-url";
 import { useI18n, LanguageToggle } from "@/lib/i18n";
 import {
   getLocalRepoStatus,
@@ -233,6 +233,14 @@ export function NavLinks({ repo, stars, extension }: { repo: string | null; star
           </a>
         )}
         <LanguageToggle />
+        <Link
+          href="/settings"
+          className="nav-passcode-btn"
+          title="Settings & API Keys"
+          aria-label="Settings & API Keys"
+        >
+          ⚙️
+        </Link>
         <PasscodeButton />
       </nav>
     </>

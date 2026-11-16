@@ -14,7 +14,6 @@ const CATEGORIES: Array<{ id: "All" | FreebieRecord["category"]; labelTh: string
 ];
 
 const LOCAL_FREEBIES_KEY = "gitmanual-local-freebies";
-const LOCAL_NOTIFY_KEY = "gitmanual-local-notify";
 
 export function FreebiesClient({
   initialItems,
@@ -52,13 +51,7 @@ export function FreebiesClient({
       } catch {}
     }
     try {
-      const cfgRaw = localStorage.getItem(LOCAL_NOTIFY_KEY);
-      if (cfgRaw) {
-        const cfg = JSON.parse(cfgRaw);
-        if (cfg.lineToken) setLineToken(cfg.lineToken);
-        if (cfg.lineTargetId) setLineTargetId(cfg.lineTargetId);
-        if (cfg.webhookUrl) setWebhookUrl(cfg.webhookUrl);
-      }
+      localStorage.removeItem("gitmanual-local-notify");
     } catch {}
   }, [dbAvailable]);
 
@@ -100,13 +93,6 @@ export function FreebiesClient({
     setError(null);
     setStatusMsg(null);
     try {
-      try {
-        localStorage.setItem(
-          LOCAL_NOTIFY_KEY,
-          JSON.stringify({ lineToken, lineTargetId, webhookUrl }),
-        );
-      } catch {}
-
       const res = await fetch("/api/freebies/notify", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -334,3 +320,4 @@ export function FreebiesClient({
     </div>
   );
 }
+

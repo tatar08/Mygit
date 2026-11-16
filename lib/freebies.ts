@@ -117,7 +117,7 @@ export async function collectAndFilterFreebies(): Promise<{
   const unique = Array.from(new Map(candidates.map((c) => [c.id, c])).values()).slice(0, 28);
   const now = Date.now();
 
-  if (unique.length && hasAiConfigured()) {
+  if (unique.length && (await hasAiConfigured())) {
     try {
       const listStr = unique
         .map((c, i) => `${i + 1}. [${c.id}] (${c.source}) ${c.title}`)
@@ -198,3 +198,4 @@ ${listStr}`;
     aiFiltered: false,
   };
 }
+

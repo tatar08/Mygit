@@ -1,4 +1,5 @@
-export type RepoRef = { owner: string; repo: string; ref?: string };
+import { parseRepoUrl, type RepoRef } from "./repo-url";
+export { parseRepoUrl, type RepoRef };
 
 export type RepoMeta = {
   fullName: string;
@@ -28,21 +29,6 @@ export class GitHubError extends Error {
   }
 }
 
-// Accepts "owner/repo", "github.com/owner/repo", full URLs, .git suffixes and /tree/<branch> paths.
-export function parseRepoUrl(input: string): RepoRef | null {
-  let s = input.trim();
-  s = s.replace(/^git@github\.com:/, "github.com/");
-  s = s.replace(/^https?:\/\//, "").replace(/^www\./, "");
-  if (s.startsWith("github.com/")) s = s.slice("github.com/".length);
-  const parts = s.split(/[/?#]/).filter(Boolean);
-  if (parts.length < 2) return null;
-  const owner = parts[0];
-  const repo = parts[1].replace(/\.git$/, "");
-  if (!/^[\w.-]+$/.test(owner) || !/^[\w.-]+$/.test(repo)) return null;
-  const ref = parts[2] === "tree" && parts[3] ? parts[3] : undefined;
-  return { owner, repo, ref };
-}
-
 // `token` is a visitor's own GitHub access, for their private repos; otherwise the site's token is used.
 function headers(token?: string, accept = "application/vnd.github+json"): HeadersInit {
   const h: Record<string, string> = { Accept: accept, "User-Agent": "gitmanual" };
@@ -67,7 +53,14 @@ async function fetchRetry(url: string, init: RequestInit): Promise<Response> {
 }
 
 async function gh<T>(path: string, token?: string): Promise<T> {
-  const res = await fetchRetry(`https://api.github.com${path}`, { headers: headers(token), cache: "no-store" });
+  let resolvedToken = token;
+  if (!resolvedToken && typeof window === "undefined") {
+    try {
+      const { getSecret } = await import("./secrets");
+      resolvedToken = (await getSecret("github_token")) ?? undefined;
+    } catch {}
+  }
+  const res = await fetchRetry(`https://api.github.com${path}`, { headers: headers(resolvedToken), cache: "no-store" });
   if (!res.ok) {
     if (token && res.status === 404) throw new GitHubError("GitHub says this access can't see that repo. Check that it includes this repo.", 404);
     if (res.status === 404) throw new GitHubError("Repository not found (or it is private).", 404);

@@ -15,3 +15,4 @@ export default async function FreebiesPage() {
 
   return <FreebiesClient initialItems={initialItems} dbAvailable={dbAvailable} />;
 }
+
