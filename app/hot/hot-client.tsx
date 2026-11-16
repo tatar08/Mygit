@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { compactCount } from "@/lib/format";
 import { useI18n } from "@/lib/i18n";
 import type { HotCategory, HotPeriod, HotRepoItem } from "@/lib/github";
+import { getLocalShelf, saveToLocalShelf } from "@/lib/local-shelf";
 
 export type HotRepoWithStatus = HotRepoItem & {
   saved: boolean;
@@ -40,6 +41,25 @@ export function HotClient({
   const [savingMap, setSavingMap] = useState<Record<string, boolean>>({});
   const [fetchedAt, setFetchedAt] = useState<number>(initialFetchedAt);
 
+  const mergeLocalStatus = (list: HotRepoWithStatus[]): HotRepoWithStatus[] => {
+    const local = getLocalShelf();
+    if (!local.length) return list;
+    const map = new Map(local.map((r) => [r.fullName.toLowerCase(), r]));
+    return list.map((item) => {
+      const loc = map.get(item.fullName.toLowerCase());
+      if (!loc) return item;
+      return {
+        ...item,
+        saved: item.saved || true,
+        installed: item.installed || Boolean(loc.installed),
+      };
+    });
+  };
+
+  useEffect(() => {
+    setItems((prev) => mergeLocalStatus(prev));
+  }, []);
+
   const loadHot = async (nextPeriod: HotPeriod, nextCategory: HotCategory, isRefresh = false) => {
     setPeriod(nextPeriod);
     setCategory(nextCategory);
@@ -55,7 +75,7 @@ export function HotClient({
       if (!res.ok) {
         throw new Error(data.error || "Failed to load hot repos");
       }
-      setItems(data.items ?? []);
+      setItems(mergeLocalStatus(data.items ?? []));
       setFetchedAt(data.fetchedAt ?? Date.now());
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load hot repos");
@@ -89,9 +109,13 @@ export function HotClient({
         setItems((prev) =>
           prev.map((item) => (item.fullName === fullName ? { ...item, saved: true } : item)),
         );
-        try {
-          localStorage.setItem(`gitmanual-shelf:${fullName.toLowerCase()}`, "1");
-        } catch {}
+        saveToLocalShelf({
+          fullName: r.fullName,
+          description: r.description,
+          stars: r.stars,
+          language: r.language,
+          difficulty: data.repo?.difficulty ?? "Moderate",
+        });
       } else {
         setError(data.error || "Failed to save to shelf");
       }

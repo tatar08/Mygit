@@ -618,7 +618,15 @@ function Report({
                 {meta.fullName.split("/")[1]}
               </a>
             </h1>
-            <SaveToShelfButton fullName={meta.fullName} />
+            <SaveToShelfButton
+              fullName={meta.fullName}
+              meta={{
+                description: meta.description,
+                stars: meta.stars,
+                language: meta.language,
+                difficulty: a.difficulty.label,
+              }}
+            />
           </div>
           {meta.description && <p className="lead">{meta.description}</p>}
           <div className="chips">

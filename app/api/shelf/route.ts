@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { hasRepo, repoKey, removeRepo, saveShelfBookmark, setInShelf, setInstalled, getRepoStatus } from "@/lib/db";
+import { hasRepo, isDbAvailable, repoKey, removeRepo, saveShelfBookmark, setInShelf, setInstalled, getRepoStatus } from "@/lib/db";
 import { loadRepo } from "@/lib/pipeline";
 
 export async function GET(req: Request) {
@@ -13,8 +13,9 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "Missing repo parameter" }, { status: 400 });
     }
 
+    const dbAvailable = await isDbAvailable();
     const status = await getRepoStatus(fullName);
-    return NextResponse.json(status);
+    return NextResponse.json({ ...status, dbAvailable });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "Failed to get shelf status";
     return NextResponse.json({ error: msg }, { status: 500 });
@@ -30,33 +31,47 @@ export async function POST(req: Request) {
 
     const key = repoKey(owner, repo);
     let resolvedFullName = fullName || `${owner}/${repo}`;
+    let cardInfo = {
+      fullName: resolvedFullName,
+      description: typeof description === "string" ? description : null,
+      stars: typeof stars === "number" ? stars : 0,
+      language: typeof language === "string" ? language : null,
+      difficulty: "Moderate",
+    };
 
-    if (await hasRepo(key)) {
-      await setInShelf(key, true);
-    } else {
-      try {
-        const loaded = await loadRepo({ owner, repo });
-        resolvedFullName = loaded.data.meta.fullName;
+    const dbAvailable = await isDbAvailable();
+
+    if (dbAvailable) {
+      if (await hasRepo(key)) {
         await setInShelf(key, true);
-      } catch (err) {
-        // If GitHub API fails (e.g. rate limit), still save bookmark to SQLite shelf
-        await saveShelfBookmark(key, {
-          fullName: resolvedFullName,
-          description: typeof description === "string" ? description : null,
-          stars: typeof stars === "number" ? stars : 0,
-          language: typeof language === "string" ? language : null,
-        });
+      } else {
+        try {
+          const loaded = await loadRepo({ owner, repo });
+          resolvedFullName = loaded.data.meta.fullName;
+          cardInfo = {
+            fullName: loaded.data.meta.fullName,
+            description: loaded.data.meta.description,
+            stars: loaded.data.meta.stars,
+            language: loaded.data.meta.language,
+            difficulty: loaded.data.analysis.difficulty.label,
+          };
+          await setInShelf(key, true);
+        } catch {
+          await saveShelfBookmark(key, cardInfo);
+        }
       }
-    }
 
-    if (typeof installed === "boolean") {
-      await setInstalled(key, installed);
+      if (typeof installed === "boolean") {
+        await setInstalled(key, installed);
+      }
     }
 
     return NextResponse.json({
       success: true,
       saved: true,
+      dbAvailable,
       fullName: resolvedFullName,
+      repo: cardInfo,
       shelfUrl: "/shelf",
     });
   } catch (err: unknown) {

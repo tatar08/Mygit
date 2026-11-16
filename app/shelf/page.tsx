@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { browseRepos, SHELF_PAGE, type ShelfQuery } from "@/lib/db";
-import { ShelfCard } from "../cards";
+import { browseRepos, isDbAvailable, SHELF_PAGE, type ShelfQuery } from "@/lib/db";
 import { CarbonAd } from "../carbon";
 import { ShelfFilters } from "./filters";
+import { ShelfList } from "./shelf-list";
 
 const DESCRIPTION = "Browse the open-source repos people have set up with gitmanual, by stars, language and difficulty.";
 
@@ -41,7 +41,10 @@ function parse(p: Params): ShelfQuery {
 export default async function ShelfPage({ searchParams }: { searchParams: Promise<Params> }) {
   const params = await searchParams;
   const query = parse(params);
-  const { repos, total, languages, all, rising } = await browseRepos(query);
+  const [dbAvailable, { repos, total, languages, all, rising }] = await Promise.all([
+    isDbAvailable(),
+    browseRepos(query),
+  ]);
   const pages = Math.max(1, Math.ceil(total / SHELF_PAGE));
   const pageHref = (n: number) => {
     const next = new URLSearchParams(Object.entries(params).filter((e): e is [string, string] => Boolean(e[1])));
@@ -85,33 +88,13 @@ export default async function ShelfPage({ searchParams }: { searchParams: Promis
 
       <ShelfFilters query={query} languages={languages} />
 
-      <p className="shelf-count" aria-live="polite">
-        {total.toLocaleString()} {total === 1 ? "repo" : "repos"}
-        {filtered && (
-          <>
-            {" · "}
-            <Link href="/shelf">Clear filters</Link>
-          </>
-        )}
-      </p>
-
-      {repos.length ? (
-        <ul className="shelf-grid">
-          {repos.map((r) => (
-            <li key={r.fullName}>
-              <ShelfCard repo={r} />
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <div className="panel shelf-empty">
-          <h2>Nothing on this shelf yet</h2>
-          <p className="note">{filtered ? "No repos match these filters. Try fewer stars or another language." : "Look up a repo and it shows up here."}</p>
-          <Link className="btn btn-go btn-sm" href={filtered ? "/shelf" : "/"}>
-            {filtered ? "Clear filters" : "Look up a repo"}
-          </Link>
-        </div>
-      )}
+      <ShelfList
+        dbAvailable={dbAvailable}
+        serverRepos={repos}
+        total={total}
+        query={query}
+        filtered={filtered}
+      />
 
       {pages > 1 && (
         <nav className="pager" aria-label="Pages">

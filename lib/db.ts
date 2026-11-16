@@ -201,6 +201,10 @@ function db(): Promise<Client | null> {
   return store.gitmanualDb;
 }
 
+export async function isDbAvailable(): Promise<boolean> {
+  return Boolean(await db());
+}
+
 // For what must not happen without the database, like spending on chat (lib/budget.ts): it throws instead of
 // falling back, so a missing or failing database stops the action rather than letting it through unrecorded.
 export async function strictly<T>(fn: (c: Client) => Promise<T>): Promise<T> {

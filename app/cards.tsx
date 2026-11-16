@@ -6,6 +6,7 @@ import { compactCount } from "@/lib/format";
 import type { RepoCard } from "@/lib/db";
 import { Wrenches } from "./ui";
 import { useI18n } from "@/lib/i18n";
+import { removeFromLocalShelf, setLocalInstalled } from "@/lib/local-shelf";
 
 const LEVEL: Record<string, { n: number; time: string }> = {
   Easy: { n: 1, time: "~5 min" },
@@ -18,7 +19,15 @@ export const risingToday = (r: RepoCard) => r.risingAt !== null && Date.now() - 
 
 // One repo on the shelf, drawn like the label on a flat-pack box: what it is, then how hard it is to put together.
 // `href` overrides the link, e.g. to a system's page from a list for that system.
-export function ShelfCard({ repo: r, href }: { repo: RepoCard; href?: string }) {
+export function ShelfCard({
+  repo: r,
+  href,
+  onRemove,
+}: {
+  repo: RepoCard;
+  href?: string;
+  onRemove?: (fullName: string) => void;
+}) {
   const [owner, name] = r.fullName.split("/");
   const level = LEVEL[r.difficulty] ?? LEVEL.Moderate;
   const { t } = useI18n();
@@ -47,6 +56,7 @@ export function ShelfCard({ repo: r, href }: { repo: RepoCard; href?: string }) 
       });
       if (res.ok) {
         setInstalledState(nextState);
+        setLocalInstalled(r.fullName, nextState);
       }
     } catch (err) {
       console.error("Failed to update installed status:", err);
@@ -71,9 +81,8 @@ export function ShelfCard({ repo: r, href }: { repo: RepoCard; href?: string }) 
       });
       if (res.ok) {
         setRemoved(true);
-        try {
-          localStorage.removeItem(`gitmanual-shelf:${r.fullName.toLowerCase()}`);
-        } catch {}
+        removeFromLocalShelf(r.fullName);
+        onRemove?.(r.fullName);
       }
     } catch (err) {
       console.error("Failed to remove from shelf:", err);

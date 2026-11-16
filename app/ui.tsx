@@ -6,6 +6,12 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { compactCount } from "@/lib/format";
 import { parseRepoUrl } from "@/lib/github";
 import { useI18n, LanguageToggle } from "@/lib/i18n";
+import {
+  getLocalRepoStatus,
+  removeFromLocalShelf,
+  saveToLocalShelf,
+  setLocalInstalled,
+} from "@/lib/local-shelf";
 import type { Arch } from "@/lib/install";
 import type { OS } from "@/lib/os";
 
@@ -245,9 +251,16 @@ export function AddProjectButton({ className = "" }: { className?: string }) {
 
 export function SaveToShelfButton({
   fullName,
+  meta,
   className = "",
 }: {
   fullName: string;
+  meta?: {
+    description?: string | null;
+    stars?: number;
+    language?: string | null;
+    difficulty?: string;
+  };
   className?: string;
 }) {
   const router = useRouter();
@@ -263,25 +276,29 @@ export function SaveToShelfButton({
     fetch(`/api/shelf?fullName=${encodeURIComponent(fullName)}`)
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
-        if (!active || !data) return;
-        setSaved(Boolean(data.saved));
-        setInstalledState(Boolean(data.installed));
-        if (data.saved) {
-          try {
-            localStorage.setItem(`gitmanual-shelf:${fullName.toLowerCase()}`, "1");
-          } catch {}
+        if (!active) return;
+        if (data && data.dbAvailable) {
+          setSaved(Boolean(data.saved));
+          setInstalledState(Boolean(data.installed));
+          if (data.saved) {
+            saveToLocalShelf({ fullName, ...meta, installed: Boolean(data.installed) });
+          }
+        } else {
+          const local = getLocalRepoStatus(fullName);
+          setSaved(local.saved);
+          setInstalledState(local.installed);
         }
       })
       .catch(() => {
-        try {
-          const isSaved = localStorage.getItem(`gitmanual-shelf:${fullName.toLowerCase()}`) === "1";
-          if (isSaved && active) setSaved(true);
-        } catch {}
+        if (!active) return;
+        const local = getLocalRepoStatus(fullName);
+        setSaved(local.saved);
+        setInstalledState(local.installed);
       });
     return () => {
       active = false;
     };
-  }, [fullName]);
+  }, [fullName, meta]);
 
   const handleSave = async (e: React.MouseEvent) => {
     e.preventDefault();
@@ -296,13 +313,26 @@ export function SaveToShelfButton({
       const res = await fetch("/api/shelf", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ owner, repo }),
+        body: JSON.stringify({
+          owner,
+          repo,
+          fullName,
+          description: meta?.description ?? null,
+          stars: meta?.stars ?? 0,
+          language: meta?.language ?? null,
+        }),
       });
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
         setSaved(true);
-        try {
-          localStorage.setItem(`gitmanual-shelf:${fullName.toLowerCase()}`, "1");
-        } catch {}
+        saveToLocalShelf({
+          fullName,
+          description: data.repo?.description ?? meta?.description ?? null,
+          stars: data.repo?.stars ?? meta?.stars ?? 0,
+          language: data.repo?.language ?? meta?.language ?? null,
+          difficulty: data.repo?.difficulty ?? meta?.difficulty ?? "Moderate",
+          installed: false,
+        });
       }
     } catch (err) {
       console.error("Failed to save to shelf:", err);
@@ -325,6 +355,7 @@ export function SaveToShelfButton({
       });
       if (res.ok) {
         setInstalledState(next);
+        setLocalInstalled(fullName, next);
       }
     } catch (err) {
       console.error("Failed to toggle installed status:", err);
@@ -349,9 +380,7 @@ export function SaveToShelfButton({
       if (res.ok) {
         setSaved(false);
         setInstalledState(false);
-        try {
-          localStorage.removeItem(`gitmanual-shelf:${fullName.toLowerCase()}`);
-        } catch {}
+        removeFromLocalShelf(fullName);
       }
     } catch (err) {
       console.error("Failed to remove from shelf:", err);
