@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { compactCount } from "@/lib/format";
 import { parseRepoUrl } from "@/lib/github";
 import { useI18n, LanguageToggle } from "@/lib/i18n";
@@ -252,7 +253,7 @@ export function PasscodeButton() {
       >
         🔑
       </button>
-      {open && <PasscodeModal onClose={() => setOpen(false)} />}
+      {open && typeof document !== "undefined" && createPortal(<PasscodeModal onClose={() => setOpen(false)} />, document.body)}
     </>
   );
 }
@@ -322,9 +323,17 @@ function PasscodeModal({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="add-modal-backdrop" onClick={onClose}>
-      <div className="add-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+      <div
+        className="add-modal-box"
+        style={{ maxWidth: 440 }}
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+      >
         <div className="add-modal-head">
-          <h2>🔑 {t("passcodeModalTitle")}</h2>
+          <div className="add-modal-title">
+            <h3>🔑 {t("passcodeModalTitle")}</h3>
+          </div>
           <button type="button" className="add-modal-close" onClick={onClose} aria-label="Close">
             ×
           </button>
