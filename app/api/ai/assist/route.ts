@@ -15,9 +15,11 @@ export async function POST(req: Request) {
       parts = [],
       steps = [],
       errorText = "",
+      question = "",
+      history = [],
       locale = "th",
     } = body as {
-      mode?: "summary" | "security" | "error";
+      mode?: "summary" | "security" | "error" | "chat";
       fullName?: string;
       os?: string;
       arch?: string | null;
@@ -27,6 +29,8 @@ export async function POST(req: Request) {
       parts?: string[];
       steps?: string[];
       errorText?: string;
+      question?: string;
+      history?: Array<{ role: "user" | "assistant"; content: string }>;
       locale?: "th" | "en";
     };
 
@@ -59,6 +63,20 @@ ${context}`;
 3. **สรุปความคุ้มค่าในการติดตั้ง**: ระดับความยากและความพร้อม
 
 ${context}`;
+    } else if (mode === "chat") {
+      if (!question.trim()) {
+        return NextResponse.json({ error: "Please enter a question." }, { status: 400 });
+      }
+      const histText = history
+        .slice(-6)
+        .map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`)
+        .join("\n");
+      prompt = `Answer the user's question about ${fullName} for ${os ?? "linux"} (${arch ?? "unknown arch"}) in ${replyLang}.
+
+Project context:
+${context}
+
+${histText ? `Recent conversation:\n${histText}\n\n` : ""}User's question: ${question.trim()}`;
     } else {
       if (!errorText.trim()) {
         return NextResponse.json({ error: "Please paste the error message first." }, { status: 400 });
