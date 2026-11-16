@@ -153,27 +153,70 @@ export function SettingsClient({
       setAiProvider(data.provider);
       setAiModels(models);
 
+      let chosenModel = "";
       if (models.length) {
-        if (data.provider === "gemini" && !values.gemini_model) {
-          setField("gemini_model", models[0]);
-        } else if (data.provider === "ollama" && !values.ollama_model) {
+        if (data.provider === "gemini") {
+          chosenModel = values.gemini_model || models[0];
+          setField("gemini_model", chosenModel);
+        } else if (data.provider === "ollama") {
           const preferred = ["gemma4:12b", "qwen3.8:27b", "qwen3-coder:30b", "llama3:latest"];
-          const best = preferred.find((p) => models.includes(p)) || models[0];
-          setField("ollama_model", best);
+          chosenModel = values.ollama_model || preferred.find((p) => models.includes(p)) || models[0];
+          setField("ollama_model", chosenModel);
+        }
+      }
+
+      // Auto-save tested AI credentials & selected model immediately!
+      const savePayload: Partial<Record<SecretKey, string>> = {};
+      if (data.provider === "gemini") {
+        if (values.gemini_api_key?.trim()) savePayload.gemini_api_key = values.gemini_api_key.trim();
+        if (chosenModel) savePayload.gemini_model = chosenModel;
+      } else if (data.provider === "ollama") {
+        if (values.ollama_url?.trim()) savePayload.ollama_url = values.ollama_url.trim();
+        if (chosenModel) savePayload.ollama_model = chosenModel;
+      }
+      if (Object.keys(savePayload).length > 0) {
+        const saveRes = await fetch("/api/settings", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(savePayload),
+        });
+        const saveData = await saveRes.json().catch(() => ({}));
+        if (saveRes.ok && saveData.statuses) {
+          setStatuses(saveData.statuses);
+          setValues((prev) => {
+            const next = { ...prev };
+            delete next.gemini_api_key;
+            delete next.ollama_url;
+            return next;
+          });
         }
       }
 
       const providerLabel = data.provider === "gemini" ? "Gemini API" : "Ollama";
       setAiTestMsg(
         th
-          ? `✓ เชื่อมต่อ ${providerLabel} สำเร็จ! พบ ${models.length} โมเดล`
-          : `✓ Connected to ${providerLabel}! Found ${models.length} models.`,
+          ? `✓ เชื่อมต่อ & บันทึก ${providerLabel} สำเร็จ! พบ ${models.length} โมเดล`
+          : `✓ Connected & saved ${providerLabel}! Found ${models.length} models.`,
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : "AI connection failed");
     } finally {
       setTestingAi(false);
     }
+  };
+
+  const savePartial = async (payload: Partial<Record<SecretKey, string>>) => {
+    try {
+      const res = await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.statuses) {
+        setStatuses(data.statuses);
+      }
+    } catch {}
   };
 
   const handleTestGithub = async () => {
@@ -191,6 +234,11 @@ export function SettingsClient({
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "GitHub connection failed");
+
+      if (values.github_token?.trim()) {
+        await savePartial({ github_token: values.github_token.trim() });
+        setField("github_token", "");
+      }
 
       setGhTestMsg(
         th
@@ -329,7 +377,10 @@ export function SettingsClient({
                   <select
                     id="gemini_model"
                     value={values.gemini_model ?? ""}
-                    onChange={(e) => setField("gemini_model", e.target.value)}
+                    onChange={(e) => {
+                      setField("gemini_model", e.target.value);
+                      savePartial({ gemini_model: e.target.value });
+                    }}
                     className="settings-input"
                   >
                     {aiModels.map((m) => (
@@ -376,7 +427,10 @@ export function SettingsClient({
                   <select
                     id="ollama_model"
                     value={values.ollama_model ?? ""}
-                    onChange={(e) => setField("ollama_model", e.target.value)}
+                    onChange={(e) => {
+                      setField("ollama_model", e.target.value);
+                      savePartial({ ollama_model: e.target.value });
+                    }}
                     className="settings-input"
                   >
                     {aiModels.map((m) => (
