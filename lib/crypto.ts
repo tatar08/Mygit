@@ -61,3 +61,4 @@ export function maskSecret(secret: string | null | undefined): string {
   if (s.length <= 6) return "••••••";
   return `••••••••${s.slice(-4)}`;
 }
+

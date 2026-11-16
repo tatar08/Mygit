@@ -21,10 +21,11 @@ export async function askAiText(
   prompt: string,
   opts: { system?: string; json?: boolean; temperature?: number } = {},
 ): Promise<AiResult> {
-  const [geminiKey, geminiModel, ollamaUrl] = await Promise.all([
+  const [geminiKey, geminiModel, ollamaUrl, ollamaModel] = await Promise.all([
     getSecret("gemini_api_key"),
     getSecret("gemini_model"),
     getSecret("ollama_url"),
+    getSecret("ollama_model"),
   ]);
 
   if (geminiKey) {
@@ -65,7 +66,7 @@ export async function askAiText(
 
   if (ollamaUrl) {
     const base = ollamaUrl.replace(/\/$/, "");
-    let model = process.env.OLLAMA_MODEL?.trim() || "";
+    let model = ollamaModel || "";
     if (!model) {
       try {
         const tagsRes = await fetch(`${base}/api/tags`, { cache: "no-store" });

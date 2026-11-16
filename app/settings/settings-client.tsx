@@ -19,6 +19,12 @@ export function SettingsClient({
   const [saving, setSaving] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [testingNotify, setTestingNotify] = useState(false);
+  const [testingAi, setTestingAi] = useState(false);
+  const [testingGithub, setTestingGithub] = useState(false);
+  const [aiModels, setAiModels] = useState<string[]>([]);
+  const [aiProvider, setAiProvider] = useState<"gemini" | "ollama" | null>(null);
+  const [aiTestMsg, setAiTestMsg] = useState<string | null>(null);
+  const [ghTestMsg, setGhTestMsg] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -121,6 +127,76 @@ export function SettingsClient({
     }
   };
 
+  const handleTestAi = async () => {
+    setTestingAi(true);
+    setAiTestMsg(null);
+    setError(null);
+    try {
+      const res = await fetch("/api/settings/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          target: "ai",
+          gemini_api_key: values.gemini_api_key,
+          ollama_url: values.ollama_url,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "AI connection failed");
+
+      const models: string[] = Array.isArray(data.models) ? data.models : [];
+      setAiProvider(data.provider);
+      setAiModels(models);
+
+      if (models.length) {
+        if (data.provider === "gemini" && !values.gemini_model) {
+          setField("gemini_model", models[0]);
+        } else if (data.provider === "ollama" && !values.ollama_model) {
+          setField("ollama_model", models[0]);
+        }
+      }
+
+      const providerLabel = data.provider === "gemini" ? "Gemini API" : "Ollama";
+      setAiTestMsg(
+        th
+          ? `✓ เชื่อมต่อ ${providerLabel} สำเร็จ! ดึงโมเดลได้ ${models.length} ตัว`
+          : `✓ Connected to ${providerLabel}! Found ${models.length} models.`,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "AI connection failed");
+    } finally {
+      setTestingAi(false);
+    }
+  };
+
+  const handleTestGithub = async () => {
+    setTestingGithub(true);
+    setGhTestMsg(null);
+    setError(null);
+    try {
+      const res = await fetch("/api/settings/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          target: "github",
+          github_token: values.github_token,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "GitHub connection failed");
+
+      setGhTestMsg(
+        th
+          ? `✓ เชื่อมต่อ GitHub สำเร็จ! (${data.authenticated ? "ใช้ Token" : "Public"}) โควต้าคงเหลือ ${Number(data.remaining).toLocaleString()} / ${Number(data.limit).toLocaleString()}`
+          : `✓ GitHub connected (${data.authenticated ? "Authenticated" : "Public"}): ${Number(data.remaining).toLocaleString()} / ${Number(data.limit).toLocaleString()} remaining`,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "GitHub connection failed");
+    } finally {
+      setTestingGithub(false);
+    }
+  };
+
   const renderBadge = (key: SecretKey) => {
     const st = statuses[key];
     if (!st?.configured) {
@@ -214,14 +290,29 @@ export function SettingsClient({
                 <label htmlFor="gemini_model">Gemini Model</label>
                 {renderBadge("gemini_model")}
               </div>
-              <input
-                id="gemini_model"
-                type="text"
-                value={values.gemini_model ?? ""}
-                onChange={(e) => setField("gemini_model", e.target.value)}
-                placeholder="gemini-2.5-flash"
-                className="add-modal-input"
-              />
+              {aiProvider === "gemini" && aiModels.length > 0 ? (
+                <select
+                  id="gemini_model"
+                  value={values.gemini_model ?? ""}
+                  onChange={(e) => setField("gemini_model", e.target.value)}
+                  className="add-modal-input"
+                >
+                  {aiModels.map((m) => (
+                    <option key={m} value={m}>
+                      {m}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  id="gemini_model"
+                  type="text"
+                  value={values.gemini_model ?? ""}
+                  onChange={(e) => setField("gemini_model", e.target.value)}
+                  placeholder="gemini-2.5-flash"
+                  className="add-modal-input"
+                />
+              )}
             </div>
 
             <div className="settings-field">
@@ -234,10 +325,60 @@ export function SettingsClient({
                 type="url"
                 value={values.ollama_url ?? ""}
                 onChange={(e) => setField("ollama_url", e.target.value)}
-                placeholder="http://localhost:11434"
+                placeholder="http://127.0.0.1:11434"
                 className="add-modal-input"
               />
             </div>
+          </div>
+
+          {(aiProvider === "ollama" || statuses.ollama_model?.configured) && (
+            <div className="settings-field">
+              <div className="settings-field-label">
+                <label htmlFor="ollama_model">Ollama Model</label>
+                {renderBadge("ollama_model")}
+              </div>
+              {aiProvider === "ollama" && aiModels.length > 0 ? (
+                <select
+                  id="ollama_model"
+                  value={values.ollama_model ?? ""}
+                  onChange={(e) => setField("ollama_model", e.target.value)}
+                  className="add-modal-input"
+                >
+                  {aiModels.map((m) => (
+                    <option key={m} value={m}>
+                      {m}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  id="ollama_model"
+                  type="text"
+                  value={values.ollama_model ?? ""}
+                  onChange={(e) => setField("ollama_model", e.target.value)}
+                  placeholder="gemma4:12b"
+                  className="add-modal-input"
+                />
+              )}
+            </div>
+          )}
+
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginTop: 8 }}>
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={handleTestAi}
+              disabled={testingAi}
+            >
+              {testingAi
+                ? th
+                  ? "🔌 กำลังทดสอบ & ดึงโมเดล..."
+                  : "🔌 Testing & fetching models..."
+                : th
+                  ? "🔌 Test Connect & ดึงโมเดลล่าสุด"
+                  : "🔌 Test Connect & Fetch Models"}
+            </button>
+            {aiTestMsg && <span className="passcode-success" style={{ padding: "5px 10px" }}>{aiTestMsg}</span>}
           </div>
         </section>
 
@@ -268,6 +409,23 @@ export function SettingsClient({
               placeholder={statuses.github_token?.configured ? th ? "กรอกใหม่เพื่อเปลี่ยน Token..." : "Enter new token to replace..." : "ghp_... หรือ github_pat_..."}
               className="add-modal-input"
             />
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginTop: 8 }}>
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={handleTestGithub}
+              disabled={testingGithub}
+            >
+              {testingGithub
+                ? th
+                  ? "🔌 กำลังทดสอบ GitHub..."
+                  : "🔌 Testing GitHub..."
+                : th
+                  ? "🔌 Test GitHub Token"
+                  : "🔌 Test GitHub Token"}
+            </button>
+            {ghTestMsg && <span className="passcode-success" style={{ padding: "5px 10px" }}>{ghTestMsg}</span>}
           </div>
         </section>
 
@@ -357,3 +515,4 @@ export function SettingsClient({
     </div>
   );
 }
+

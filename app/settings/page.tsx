@@ -13,3 +13,4 @@ export default async function SettingsPage() {
   const { dbAvailable, statuses } = await getAllSecretStatuses();
   return <SettingsClient initialStatuses={statuses} dbAvailable={dbAvailable} />;
 }
+

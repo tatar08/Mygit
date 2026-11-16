@@ -8,6 +8,7 @@ export type SecretKey =
   | "gemini_api_key"
   | "gemini_model"
   | "ollama_url"
+  | "ollama_model"
   | "github_token"
   | "line_channel_token"
   | "line_target_id"
@@ -17,6 +18,7 @@ const ENV_MAP: Record<SecretKey, string> = {
   gemini_api_key: "GEMINI_API_KEY",
   gemini_model: "GEMINI_MODEL",
   ollama_url: "OLLAMA_URL",
+  ollama_model: "OLLAMA_MODEL",
   github_token: "GITHUB_TOKEN",
   line_channel_token: "LINE_CHANNEL_ACCESS_TOKEN",
   line_target_id: "LINE_TARGET_ID",
@@ -135,3 +137,4 @@ export async function saveSecrets(
   const encryptedCookieValue = await encryptSecret(JSON.stringify(nextCookie));
   return { dbAvailable, encryptedCookieValue };
 }
+

@@ -10,6 +10,7 @@ const ALLOWED_KEYS: SecretKey[] = [
   "gemini_api_key",
   "gemini_model",
   "ollama_url",
+  "ollama_model",
   "github_token",
   "line_channel_token",
   "line_target_id",
@@ -76,3 +77,4 @@ export async function DELETE() {
     return NextResponse.json({ error: "Failed to clear settings" }, { status: 500 });
   }
 }
+
