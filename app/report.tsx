@@ -699,7 +699,7 @@ function Report({
           </button>
         </p>
       ) : (
-        <p className="stamp-line">
+        <p className="stamp-line" suppressHydrationWarning>
           {result.stale
             ? "GitHub didn't answer, so this is the saved copy from "
             : result.cached
