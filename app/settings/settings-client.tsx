@@ -16,6 +16,12 @@ export function SettingsClient({
 
   const [statuses, setStatuses] = useState(initialStatuses);
   const [values, setValues] = useState<Partial<Record<SecretKey, string>>>({});
+  const [activeAiTab, setActiveAiTab] = useState<"gemini" | "ollama">(
+    initialStatuses.ollama_url?.configured && !initialStatuses.gemini_api_key?.configured
+      ? "ollama"
+      : "gemini",
+  );
+
   const [saving, setSaving] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [testingNotify, setTestingNotify] = useState(false);
@@ -39,7 +45,6 @@ export function SettingsClient({
     setError(null);
 
     try {
-      // Only send fields the user explicitly typed
       const payload: Partial<Record<SecretKey, string>> = {};
       for (const [k, v] of Object.entries(values) as [SecretKey, string | undefined][]) {
         if (typeof v === "string" && v.trim() !== "") {
@@ -137,8 +142,8 @@ export function SettingsClient({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           target: "ai",
-          gemini_api_key: values.gemini_api_key,
-          ollama_url: values.ollama_url,
+          gemini_api_key: activeAiTab === "gemini" ? values.gemini_api_key : "",
+          ollama_url: activeAiTab === "ollama" ? values.ollama_url : "",
         }),
       });
       const data = await res.json();
@@ -152,14 +157,16 @@ export function SettingsClient({
         if (data.provider === "gemini" && !values.gemini_model) {
           setField("gemini_model", models[0]);
         } else if (data.provider === "ollama" && !values.ollama_model) {
-          setField("ollama_model", models[0]);
+          const preferred = ["gemma4:12b", "qwen3.8:27b", "qwen3-coder:30b", "llama3:latest"];
+          const best = preferred.find((p) => models.includes(p)) || models[0];
+          setField("ollama_model", best);
         }
       }
 
       const providerLabel = data.provider === "gemini" ? "Gemini API" : "Ollama";
       setAiTestMsg(
         th
-          ? `✓ เชื่อมต่อ ${providerLabel} สำเร็จ! ดึงโมเดลได้ ${models.length} ตัว`
+          ? `✓ เชื่อมต่อ ${providerLabel} สำเร็จ! พบ ${models.length} โมเดล`
           : `✓ Connected to ${providerLabel}! Found ${models.length} models.`,
       );
     } catch (err) {
@@ -216,7 +223,7 @@ export function SettingsClient({
   };
 
   return (
-    <div className="wrap shelf-page" style={{ maxWidth: 860 }}>
+    <div className="wrap shelf-page" style={{ maxWidth: 820 }}>
       <header className="hot-page-head" style={{ marginBottom: 20 }}>
         <div>
           <p className="eyebrow">⚙️ {th ? "ตั้งค่าระบบและความปลอดภัย" : "SETTINGS & SECURITY"}</p>
@@ -229,7 +236,7 @@ export function SettingsClient({
         </div>
       </header>
 
-      <div className="panel settings-security-banner">
+      <div className="settings-security-banner">
         <strong>🛡️ {th ? "ระบบป้องกัน API Key หลุดทำงานอยู่:" : "API Key Leak Protection Active:"}</strong>
         <ul>
           <li>
@@ -260,110 +267,139 @@ export function SettingsClient({
 
       <form onSubmit={handleSave} className="settings-stack">
         {/* 1. AI Provider */}
-        <section className="panel settings-card">
+        <section className="settings-card">
           <div className="settings-card-head">
-            <h2>🤖 {th ? "1. ตั้งค่า AI (Gemini API / Ollama)" : "1. AI Provider (Gemini / Ollama)"}</h2>
+            <h2>🤖 {th ? "1. ตั้งค่า AI Provider" : "1. AI Provider"}</h2>
             <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer" className="hot-open-link">
               {th ? "รับ Gemini Key ฟรี ↗" : "Get free Gemini Key ↗"}
             </a>
           </div>
 
-          <div className="settings-field">
-            <div className="settings-field-label">
-              <label htmlFor="gemini_api_key">Gemini API Key (GEMINI_API_KEY)</label>
-              {renderBadge("gemini_api_key")}
-            </div>
-            <input
-              id="gemini_api_key"
-              type="password"
-              autoComplete="off"
-              value={values.gemini_api_key ?? ""}
-              onChange={(e) => setField("gemini_api_key", e.target.value)}
-              placeholder={statuses.gemini_api_key?.configured ? th ? "กรอกใหม่เพื่อเปลี่ยนคีย์..." : "Enter new key to replace..." : "AIzaSy..."}
-              className="add-modal-input"
-            />
+          <div className="settings-provider-tabs" role="tablist">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeAiTab === "gemini"}
+              className={`settings-provider-tab ${activeAiTab === "gemini" ? "active" : ""}`}
+              onClick={() => {
+                setActiveAiTab("gemini");
+                setAiTestMsg(null);
+              }}
+            >
+              ☁️ Gemini API (Cloud / Vercel)
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeAiTab === "ollama"}
+              className={`settings-provider-tab ${activeAiTab === "ollama" ? "active" : ""}`}
+              onClick={() => {
+                setActiveAiTab("ollama");
+                setAiTestMsg(null);
+              }}
+            >
+              🖥️ Ollama (Local AI)
+            </button>
           </div>
 
-          <div className="settings-row-2">
-            <div className="settings-field">
-              <div className="settings-field-label">
-                <label htmlFor="gemini_model">Gemini Model</label>
-                {renderBadge("gemini_model")}
-              </div>
-              {aiProvider === "gemini" && aiModels.length > 0 ? (
-                <select
-                  id="gemini_model"
-                  value={values.gemini_model ?? ""}
-                  onChange={(e) => setField("gemini_model", e.target.value)}
-                  className="add-modal-input"
-                >
-                  {aiModels.map((m) => (
-                    <option key={m} value={m}>
-                      {m}
-                    </option>
-                  ))}
-                </select>
-              ) : (
+          {activeAiTab === "gemini" ? (
+            <div className="settings-row-2">
+              <div className="settings-field">
+                <div className="settings-field-label">
+                  <label htmlFor="gemini_api_key">Gemini API Key</label>
+                  {renderBadge("gemini_api_key")}
+                </div>
                 <input
-                  id="gemini_model"
-                  type="text"
-                  value={values.gemini_model ?? ""}
-                  onChange={(e) => setField("gemini_model", e.target.value)}
-                  placeholder="gemini-2.5-flash"
-                  className="add-modal-input"
+                  id="gemini_api_key"
+                  type="password"
+                  autoComplete="off"
+                  value={values.gemini_api_key ?? ""}
+                  onChange={(e) => setField("gemini_api_key", e.target.value)}
+                  placeholder={statuses.gemini_api_key?.configured ? th ? "กรอกใหม่เพื่อเปลี่ยนคีย์..." : "Enter new key to replace..." : "AIzaSy..."}
+                  className="settings-input"
                 />
-              )}
-            </div>
-
-            <div className="settings-field">
-              <div className="settings-field-label">
-                <label htmlFor="ollama_url">{th ? "Ollama URL (สำหรับรัน Local)" : "Ollama URL (Local AI)"}</label>
-                {renderBadge("ollama_url")}
               </div>
-              <input
-                id="ollama_url"
-                type="url"
-                value={values.ollama_url ?? ""}
-                onChange={(e) => setField("ollama_url", e.target.value)}
-                placeholder="http://127.0.0.1:11434"
-                className="add-modal-input"
-              />
-            </div>
-          </div>
 
-          {(aiProvider === "ollama" || statuses.ollama_model?.configured) && (
-            <div className="settings-field">
-              <div className="settings-field-label">
-                <label htmlFor="ollama_model">Ollama Model</label>
-                {renderBadge("ollama_model")}
+              <div className="settings-field">
+                <div className="settings-field-label">
+                  <label htmlFor="gemini_model">Gemini Model</label>
+                  {renderBadge("gemini_model")}
+                </div>
+                {aiProvider === "gemini" && aiModels.length > 0 ? (
+                  <select
+                    id="gemini_model"
+                    value={values.gemini_model ?? ""}
+                    onChange={(e) => setField("gemini_model", e.target.value)}
+                    className="settings-input"
+                  >
+                    {aiModels.map((m) => (
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    id="gemini_model"
+                    type="text"
+                    value={values.gemini_model ?? ""}
+                    onChange={(e) => setField("gemini_model", e.target.value)}
+                    placeholder="gemini-2.5-flash"
+                    className="settings-input"
+                  />
+                )}
               </div>
-              {aiProvider === "ollama" && aiModels.length > 0 ? (
-                <select
-                  id="ollama_model"
-                  value={values.ollama_model ?? ""}
-                  onChange={(e) => setField("ollama_model", e.target.value)}
-                  className="add-modal-input"
-                >
-                  {aiModels.map((m) => (
-                    <option key={m} value={m}>
-                      {m}
-                    </option>
-                  ))}
-                </select>
-              ) : (
+            </div>
+          ) : (
+            <div className="settings-row-2">
+              <div className="settings-field">
+                <div className="settings-field-label">
+                  <label htmlFor="ollama_url">Ollama URL</label>
+                  {renderBadge("ollama_url")}
+                </div>
                 <input
-                  id="ollama_model"
-                  type="text"
-                  value={values.ollama_model ?? ""}
-                  onChange={(e) => setField("ollama_model", e.target.value)}
-                  placeholder="gemma4:12b"
-                  className="add-modal-input"
+                  id="ollama_url"
+                  type="url"
+                  value={values.ollama_url ?? ""}
+                  onChange={(e) => setField("ollama_url", e.target.value)}
+                  placeholder="http://127.0.0.1:11434"
+                  className="settings-input"
                 />
-              )}
+              </div>
+
+              <div className="settings-field">
+                <div className="settings-field-label">
+                  <label htmlFor="ollama_model">Ollama Model</label>
+                  {renderBadge("ollama_model")}
+                </div>
+                {aiProvider === "ollama" && aiModels.length > 0 ? (
+                  <select
+                    id="ollama_model"
+                    value={values.ollama_model ?? ""}
+                    onChange={(e) => setField("ollama_model", e.target.value)}
+                    className="settings-input"
+                  >
+                    {aiModels.map((m) => (
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    id="ollama_model"
+                    type="text"
+                    value={values.ollama_model ?? ""}
+                    onChange={(e) => setField("ollama_model", e.target.value)}
+                    placeholder="gemma4:12b"
+                    className="settings-input"
+                  />
+                )}
+              </div>
             </div>
           )}
 
-          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginTop: 8 }}>
+          <div className="settings-test-row">
             <button
               type="button"
               className="btn btn-sm"
@@ -383,14 +419,14 @@ export function SettingsClient({
         </section>
 
         {/* 2. GitHub Token */}
-        <section className="panel settings-card">
+        <section className="settings-card">
           <div className="settings-card-head">
             <h2>🐙 {th ? "2. GitHub Personal Access Token" : "2. GitHub Token"}</h2>
             <a href="https://github.com/settings/tokens" target="_blank" rel="noreferrer" className="hot-open-link">
               {th ? "สร้าง Token ↗" : "Create Token ↗"}
             </a>
           </div>
-          <p className="note" style={{ margin: "0 0 12px" }}>
+          <p className="note" style={{ margin: "0 0 14px" }}>
             {th
               ? "ช่วยเพิ่มโควต้าดึงข้อมูลหน้า Hot Repo และวิเคราะห์โปรเจกต์จาก 60 เป็น 5,000 ครั้ง/ชั่วโมง"
               : "Raises GitHub API limit from 60 to 5,000 requests/hour."}
@@ -407,30 +443,24 @@ export function SettingsClient({
               value={values.github_token ?? ""}
               onChange={(e) => setField("github_token", e.target.value)}
               placeholder={statuses.github_token?.configured ? th ? "กรอกใหม่เพื่อเปลี่ยน Token..." : "Enter new token to replace..." : "ghp_... หรือ github_pat_..."}
-              className="add-modal-input"
+              className="settings-input"
             />
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginTop: 8 }}>
+          <div className="settings-test-row">
             <button
               type="button"
               className="btn btn-sm"
               onClick={handleTestGithub}
               disabled={testingGithub}
             >
-              {testingGithub
-                ? th
-                  ? "🔌 กำลังทดสอบ GitHub..."
-                  : "🔌 Testing GitHub..."
-                : th
-                  ? "🔌 Test GitHub Token"
-                  : "🔌 Test GitHub Token"}
+              {testingGithub ? "🔌 Testing..." : "🔌 Test GitHub Token"}
             </button>
             {ghTestMsg && <span className="passcode-success" style={{ padding: "5px 10px" }}>{ghTestMsg}</span>}
           </div>
         </section>
 
         {/* 3. LINE & Webhook */}
-        <section className="panel settings-card">
+        <section className="settings-card">
           <div className="settings-card-head">
             <h2>📲 {th ? "3. แจ้งเตือน LINE Messaging API & Webhook" : "3. LINE Messaging API & Webhook"}</h2>
             <a href="https://developers.line.biz/console/" target="_blank" rel="noreferrer" className="hot-open-link">
@@ -449,7 +479,7 @@ export function SettingsClient({
               value={values.line_channel_token ?? ""}
               onChange={(e) => setField("line_channel_token", e.target.value)}
               placeholder={statuses.line_channel_token?.configured ? th ? "กรอกใหม่เพื่อเปลี่ยน Token..." : "Enter new token to replace..." : "Channel Access Token (Messaging API)"}
-              className="add-modal-input"
+              className="settings-input"
             />
           </div>
 
@@ -465,7 +495,7 @@ export function SettingsClient({
                 value={values.line_target_id ?? ""}
                 onChange={(e) => setField("line_target_id", e.target.value)}
                 placeholder={th ? "เว้นว่างเพื่อ Broadcast" : "Blank = Broadcast"}
-                className="add-modal-input"
+                className="settings-input"
               />
             </div>
 
@@ -481,12 +511,12 @@ export function SettingsClient({
                 value={values.webhook_url ?? ""}
                 onChange={(e) => setField("webhook_url", e.target.value)}
                 placeholder="https://discord.com/api/webhooks/..."
-                className="add-modal-input"
+                className="settings-input"
               />
             </div>
           </div>
 
-          <div style={{ marginTop: 8 }}>
+          <div className="settings-test-row">
             <button
               type="button"
               className="btn btn-sm"
@@ -515,4 +545,3 @@ export function SettingsClient({
     </div>
   );
 }
-

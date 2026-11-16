@@ -2384,41 +2384,75 @@ button.fb-media { width: 100%; padding: 0; border: 0; border-block: 1.5px solid 
 
 /* Settings & Security Page (/settings) */
 .settings-security-banner {
-  margin-bottom: 20px;
-  padding: 16px 20px;
+  margin-bottom: 24px;
+  padding: 18px 22px;
   background: #ecfdf5;
-  border-color: #10b981;
+  border: 2px solid #10b981;
+  border-radius: 16px;
+  box-shadow: 4px 4px 0 #10b981;
 }
 .settings-security-banner ul {
   margin: 8px 0 0;
   padding-left: 18px;
   font-size: 13.5px;
-  line-height: 1.6;
+  line-height: 1.65;
 }
 .settings-stack {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 22px;
 }
 .settings-card {
-  padding: 20px 22px;
+  background: var(--sheet);
+  border: 2px solid var(--ink);
+  border-radius: 18px;
+  box-shadow: 4px 4px 0 var(--ink);
+  padding: 24px 26px;
 }
 .settings-card-head {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 12px;
-  margin-bottom: 14px;
+  padding-bottom: 14px;
+  margin-bottom: 18px;
+  border-bottom: 1.5px dashed var(--line-strong);
 }
 .settings-card-head h2 {
   margin: 0;
-  font: 700 var(--fs-h3)/1.2 var(--display);
+  font: 800 var(--fs-h3)/1.2 var(--display);
+  letter-spacing: -0.02em;
+}
+.settings-provider-tabs {
+  display: inline-flex;
+  gap: 6px;
+  padding: 4px;
+  margin-bottom: 18px;
+  background: var(--paper);
+  border: 2px solid var(--ink);
+  border-radius: 12px;
+}
+.settings-provider-tab {
+  height: 34px;
+  padding: 0 14px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--pencil);
+  font: 700 13px var(--sans);
+  cursor: pointer;
+  transition: all 0.12s var(--ease);
+}
+.settings-provider-tab.active {
+  background: var(--wrench);
+  color: var(--ink);
+  box-shadow: 1.5px 1.5px 0 var(--ink);
 }
 .settings-field {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin-bottom: 12px;
+  gap: 8px;
+  margin-bottom: 16px;
 }
 .settings-field-label {
   display: flex;
@@ -2426,27 +2460,56 @@ button.fb-media { width: 100%; padding: 0; border: 0; border-block: 1.5px solid 
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
-  font: 600 13px var(--sans);
+  font: 700 13.5px var(--sans);
+  color: var(--ink);
+}
+.settings-input {
+  width: 100%;
+  box-sizing: border-box;
+  height: 44px;
+  padding: 0 14px;
+  border: 2px solid var(--ink);
+  border-radius: 10px;
+  background: var(--paper);
+  color: var(--ink);
+  font: 500 14px var(--mono);
+  box-shadow: 2px 2px 0 var(--ink);
+  outline: none;
+  transition: all 0.12s var(--ease);
+}
+.settings-input:focus {
+  background: var(--sheet);
+  border-color: var(--wrench);
+  box-shadow: 3px 3px 0 var(--wrench);
 }
 .settings-row-2 {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.settings-test-row {
+  display: flex;
+  align-items: center;
   gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+  padding-top: 14px;
+  border-top: 1.5px dashed var(--line);
 }
 .settings-badge {
-  padding: 2px 8px;
-  border-radius: 6px;
+  padding: 3px 9px;
+  border-radius: 7px;
   font: 700 11px var(--mono);
 }
 .settings-badge.ok {
   background: #dcfce7;
   color: #15803d;
-  border: 1px solid #86efac;
+  border: 1.5px solid #22c55e;
 }
 .settings-badge.missing {
   background: var(--paper);
   color: var(--pencil);
-  border: 1px solid var(--line-strong);
+  border: 1.5px solid var(--line-strong);
 }
 .settings-actions {
   display: flex;
@@ -2454,8 +2517,9 @@ button.fb-media { width: 100%; padding: 0; border: 0; border-block: 1.5px solid 
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
-  margin-top: 4px;
+  margin-top: 6px;
 }
 @media (max-width: 640px) {
   .settings-row-2 { grid-template-columns: 1fr; }
+  .settings-card { padding: 18px 18px; }
 }
