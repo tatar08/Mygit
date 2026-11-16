@@ -27,28 +27,56 @@ async function osPageOf(params: Props["params"]): Promise<OS | null> {
   return osFromSlug(os) ?? notFound();
 }
 
-const BOTS = /bot|crawl|spider|slurp|preview|facebookexternalhit|embedly|quora|whatsapp|telegram/i;
+const BOTS =
+  /bot|crawl|spider|slurp|preview|facebookexternalhit|embedly|quora|whatsapp|telegram/i;
 
 // One load per request, shared by generateMetadata and the page.
-const getRepo = cache(async (owner: string, repo: string, ref?: string): Promise<{ data: ReportData } | { error: string; status: number }> => {
-  const h = await headers();
-  const ua = h.get("user-agent") ?? "";
-  try {
-    const l = await loadRepo({ owner, repo: repo.replace(/\.git$/, ""), ref }, { view: !BOTS.test(ua), gate: analyzeGate(h) });
-    return { data: { ...l.data, analyzedAt: l.analyzedAt, cached: l.cached, stale: l.stale, votes: await getVotes(l.key) } as ReportData };
-  } catch (e) {
-    return e instanceof GitHubError ? { error: e.message, status: e.status } : { error: "Failed to analyze repository.", status: 500 };
-  }
-});
+const getRepo = cache(
+  async (
+    owner: string,
+    repo: string,
+    ref?: string,
+  ): Promise<{ data: ReportData } | { error: string; status: number }> => {
+    const h = await headers();
+    const ua = h.get("user-agent") ?? "";
+    try {
+      const l = await loadRepo(
+        { owner, repo: repo.replace(/\.git$/, ""), ref },
+        { view: !BOTS.test(ua), gate: analyzeGate(h) },
+      );
+      return {
+        data: {
+          ...l.data,
+          analyzedAt: l.analyzedAt,
+          cached: l.cached,
+          stale: l.stale,
+          votes: await getVotes(l.key),
+        } as ReportData,
+      };
+    } catch (e) {
+      return e instanceof GitHubError
+        ? { error: e.message, status: e.status }
+        : { error: "Failed to analyze repository.", status: 500 };
+    }
+  },
+);
 
 // "<What it is>. Downloads for macOS and Windows. Needs Node.js and Docker. Step-by-step setup for macOS, Windows and Linux."
 function summary(d: ReportData): string {
   const { meta, analysis: a, install } = d;
-  const list = (xs: string[]) => (xs.length > 1 ? `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}` : xs[0]);
+  const list = (xs: string[]) =>
+    xs.length > 1 ? `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}` : xs[0];
   const sentences = [
-    meta.description?.replace(/:[a-z0-9_+-]+:\s*/g, "").trim().replace(/[.!]?$/, "."),
-    install.platforms.length ? `Downloads for ${list(install.platforms.map((p) => OS_LABEL[p]))}.` : null,
-    a.runtimes.length ? `Needs ${list(a.runtimes.slice(0, 3).map((r) => r.name))}.` : null,
+    meta.description
+      ?.replace(/:[a-z0-9_+-]+:\s*/g, "")
+      .trim()
+      .replace(/[.!]?$/, "."),
+    install.platforms.length
+      ? `Downloads for ${list(install.platforms.map((p) => OS_LABEL[p]))}.`
+      : null,
+    a.runtimes.length
+      ? `Needs ${list(a.runtimes.slice(0, 3).map((r) => r.name))}.`
+      : null,
     "Step-by-step setup for macOS, Windows and Linux.",
   ].filter(Boolean);
   return sentences.join(" ").slice(0, 300);
@@ -62,9 +90,15 @@ function osSummary(d: ReportData, os: OS): string {
   const app = meta.fullName.split("/")[1];
   const fit = fitCheck(a, install, os, null, meta.archived);
   const steps = a.steps[os].length;
-  const shell = os === "windows" ? "PowerShell" : os === "mac" ? "Terminal" : "bash";
+  const shell =
+    os === "windows" ? "PowerShell" : os === "mac" ? "Terminal" : "bash";
   const download = hasDownload(install, os);
-  const how = [download ? "a ready-made download" : null, steps ? `${steps} copy-paste ${shell} ${steps === 1 ? "step" : "steps"}` : null]
+  const how = [
+    download ? "a ready-made download" : null,
+    steps
+      ? `${steps} copy-paste ${shell} ${steps === 1 ? "step" : "steps"}`
+      : null,
+  ]
     .filter(Boolean)
     .join(", or ");
   const time = setupTime(a.difficulty.score); // "about 5 min" or "30 min or more"
@@ -76,21 +110,34 @@ function osSummary(d: ReportData, os: OS): string {
   const sentences = [
     lead,
     // With a download, the runtimes only matter for building from source.
-    fit.status !== "no" && a.runtimes.length && !download ? `Needs ${a.runtimes.slice(0, 3).map((r) => r.name).join(", ")}.` : null,
-    meta.license && !/^(NOASSERTION|other)$/i.test(meta.license) ? `Open source (${meta.license}).` : null,
+    fit.status !== "no" && a.runtimes.length && !download
+      ? `Needs ${a.runtimes
+          .slice(0, 3)
+          .map((r) => r.name)
+          .join(", ")}.`
+      : null,
+    meta.license && !/^(NOASSERTION|other)$/i.test(meta.license)
+      ? `Open source (${meta.license}).`
+      : null,
   ].filter(Boolean);
   return sentences.join(" ").slice(0, 300);
 }
 
-export async function generateMetadata({ params, searchParams }: Props): Promise<Metadata> {
+export async function generateMetadata({
+  params,
+  searchParams,
+}: Props): Promise<Metadata> {
   const { owner, repo } = await params;
   const osPage = await osPageOf(params);
   const { ref, os: qOs } = await searchParams;
   const r = await getRepo(owner, repo, ref);
-  if ("error" in r) return { title: `${owner}/${repo}`, robots: { index: false } };
+  if ("error" in r)
+    return { title: `${owner}/${repo}`, robots: { index: false } };
   const { meta } = r.data;
   const name = meta.fullName.split("/")[1];
-  const title = osPage ? `How to install ${name} on ${OS_LABEL[osPage]} (${meta.fullName})` : `How to set up ${name} (${meta.fullName})`;
+  const title = osPage
+    ? `How to install ${name} on ${OS_LABEL[osPage]} (${meta.fullName})`
+    : `How to set up ${name} (${meta.fullName})`;
   const description = osPage ? osSummary(r.data, osPage) : summary(r.data);
   // ?os=windows on the main manual is the same content as /owner/repo/windows, so that page is its canonical.
   const qOsValid = OS_LIST.includes(qOs as OS) ? (qOs as OS) : null;
@@ -100,8 +147,26 @@ export async function generateMetadata({ params, searchParams }: Props): Promise
     description,
     alternates: { canonical },
     // Named here because the per-system pages have no image file of their own, and this openGraph would hide the repo's.
-    openGraph: { title, description, type: "article", url: canonical, images: [{ url: `/${meta.fullName}/opengraph-image`, width: 1200, height: 630, alt: `Setup manual for ${meta.fullName}` }] },
-    twitter: { card: "summary_large_image", title, description, images: [`/${meta.fullName}/opengraph-image`] },
+    openGraph: {
+      title,
+      description,
+      type: "article",
+      url: canonical,
+      images: [
+        {
+          url: `/${meta.fullName}/opengraph-image`,
+          width: 1200,
+          height: 630,
+          alt: `Setup manual for ${meta.fullName}`,
+        },
+      ],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+      images: [`/${meta.fullName}/opengraph-image`],
+    },
     // Branch views (?ref=) are variants of the main page.
     robots: ref ? { index: false, follow: true } : undefined,
   };
@@ -116,12 +181,20 @@ export async function RepoManual({ params, searchParams }: Props) {
 
   // One URL per repo: send renamed repos and other spellings (case, .git) to the canonical name.
   if ("data" in r && r.data.meta.fullName !== `${owner}/${repo}`) {
-    const q = new URLSearchParams(Object.entries({ ref, os, mode }).filter((e): e is [string, string] => Boolean(e[1])));
-    permanentRedirect(`/${r.data.meta.fullName}${osPage ? `/${OS_SLUG[osPage]}` : ""}${q.size ? `?${q}` : ""}`);
+    const q = new URLSearchParams(
+      Object.entries({ ref, os, mode }).filter((e): e is [string, string] =>
+        Boolean(e[1]),
+      ),
+    );
+    permanentRedirect(
+      `/${r.data.meta.fullName}${osPage ? `/${OS_SLUG[osPage]}` : ""}${q.size ? `?${q}` : ""}`,
+    );
   }
 
-  const initialOs: OS = osPage ?? (OS_LIST.includes(os as OS) ? (os as OS) : "mac");
-  const initialMode = mode === "install" || mode === "source" ? (mode as Mode) : undefined;
+  const initialOs: OS =
+    osPage ?? (OS_LIST.includes(os as OS) ? (os as OS) : "mac");
+  const initialMode =
+    mode === "install" || mode === "source" ? (mode as Mode) : undefined;
   return (
     <>
       {"data" in r && <JsonLd data={r.data} os={initialOs} osPage={osPage} />}
@@ -140,7 +213,10 @@ export async function RepoManual({ params, searchParams }: Props) {
         picks={"data" in r ? await picksFor(r.data.meta.fullName) : []}
         curator={PICKS.curator}
         aiGuide={Boolean(process.env.ANTHROPIC_API_KEY)}
-        chat={process.env.CHAT_ENABLED === "on" && Boolean(process.env.ANTHROPIC_API_KEY)}
+        chat={
+          process.env.CHAT_ENABLED === "on" &&
+          Boolean(process.env.ANTHROPIC_API_KEY)
+        }
         alternatives={"data" in r ? await alternatives(r.data) : {}}
         related={"data" in r ? await related(r.data) : {}}
       />
@@ -149,25 +225,53 @@ export async function RepoManual({ params, searchParams }: Props) {
 }
 
 // For each system this repo doesn't clearly run on, a few similar repos (by shared topics) that do.
-async function alternatives(d: ReportData): Promise<Partial<Record<OS, Alternative[]>>> {
+async function alternatives(
+  d: ReportData,
+): Promise<Partial<Record<OS, Alternative[]>>> {
   const topics = topicsOf(facetsOf(d));
-  const missing = OS_LIST.filter((os) => fitCheck(d.analysis, d.install, os, null, d.meta.archived).status !== "yes");
-  const found = await Promise.all(missing.map((os) => alternativesFor(d.meta.fullName.toLowerCase(), os, topics)));
-  return Object.fromEntries(missing.map((os, i) => [os, found[i]]).filter(([, alts]) => alts.length));
+  const missing = OS_LIST.filter(
+    (os) =>
+      fitCheck(d.analysis, d.install, os, null, d.meta.archived).status !==
+      "yes",
+  );
+  const found = await Promise.all(
+    missing.map((os) =>
+      alternativesFor(d.meta.fullName.toLowerCase(), os, topics),
+    ),
+  );
+  return Object.fromEntries(
+    missing.map((os, i) => [os, found[i]]).filter(([, alts]) => alts.length),
+  );
 }
 
 // Up to 6 similar repos (by GitHub topics) that run on each system, for "More like this" at the end of every manual:
 // a reader's next stop, and the links that lead search engines from one manual to the next.
-async function related(d: ReportData): Promise<Partial<Record<OS, Alternative[]>>> {
+async function related(
+  d: ReportData,
+): Promise<Partial<Record<OS, Alternative[]>>> {
   const topics = topicsOf(facetsOf(d));
-  const found = await Promise.all(OS_LIST.map((os) => alternativesFor(d.meta.fullName.toLowerCase(), os, topics, 6)));
-  return Object.fromEntries(OS_LIST.map((os, i) => [os, found[i]]).filter(([, list]) => list.length));
+  const found = await Promise.all(
+    OS_LIST.map((os) =>
+      alternativesFor(d.meta.fullName.toLowerCase(), os, topics, 6),
+    ),
+  );
+  return Object.fromEntries(
+    OS_LIST.map((os, i) => [os, found[i]]).filter(([, list]) => list.length),
+  );
 }
 
 // Structured data: what the software is, the setup as a HowTo, and where the page sits on the site.
-function JsonLd({ data, os, osPage }: { data: ReportData; os: OS; osPage: OS | null }) {
+function JsonLd({
+  data,
+  os,
+  osPage,
+}: {
+  data: ReportData;
+  os: OS;
+  osPage: OS | null;
+}) {
   const { meta, analysis } = data;
-  const site = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+  const site = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3035";
   const home = `${site}/${meta.fullName}`;
   const url = osPage ? `${home}/${OS_SLUG[osPage]}` : home;
   const name = meta.fullName.split("/")[1];
@@ -179,7 +283,12 @@ function JsonLd({ data, os, osPage }: { data: ReportData; os: OS; osPage: OS | n
       url,
       dateModified: new Date(data.analyzedAt).toISOString(),
       about: { "@id": `${home}#software` },
-      isPartOf: { "@type": "WebSite", "@id": `${site}/#website`, name: "gitmanual", url: `${site}/` },
+      isPartOf: {
+        "@type": "WebSite",
+        "@id": `${site}/#website`,
+        name: "gitmanual",
+        url: `${site}/`,
+      },
     },
     {
       "@type": "SoftwareSourceCode",
@@ -188,7 +297,10 @@ function JsonLd({ data, os, osPage }: { data: ReportData; os: OS; osPage: OS | n
       description: meta.description ?? undefined,
       codeRepository: meta.htmlUrl,
       programmingLanguage: meta.language ?? undefined,
-      license: meta.license && meta.license !== "NOASSERTION" ? `https://spdx.org/licenses/${meta.license}` : undefined,
+      license:
+        meta.license && meta.license !== "NOASSERTION"
+          ? `https://spdx.org/licenses/${meta.license}`
+          : undefined,
       keywords: meta.topics.length ? meta.topics.join(", ") : undefined,
       // Not SoftwareApplication: Google would then expect ratings and flag every manual in Search Console without them.
       dateModified: meta.pushedAt,
@@ -217,9 +329,23 @@ function JsonLd({ data, os, osPage }: { data: ReportData; os: OS; osPage: OS | n
       "@type": "BreadcrumbList",
       itemListElement: [
         { "@type": "ListItem", position: 1, name: "gitmanual", item: site },
-        { "@type": "ListItem", position: 2, name: "The shelf", item: `${site}/shelf` },
+        {
+          "@type": "ListItem",
+          position: 2,
+          name: "The shelf",
+          item: `${site}/shelf`,
+        },
         { "@type": "ListItem", position: 3, name: meta.fullName, item: home },
-        ...(osPage ? [{ "@type": "ListItem", position: 4, name: OS_LABEL[osPage], item: url }] : []),
+        ...(osPage
+          ? [
+              {
+                "@type": "ListItem",
+                position: 4,
+                name: OS_LABEL[osPage],
+                item: url,
+              },
+            ]
+          : []),
       ],
     },
   ];
@@ -227,7 +353,12 @@ function JsonLd({ data, os, osPage }: { data: ReportData; os: OS; osPage: OS | n
     <script
       type="application/ld+json"
       // JSON.stringify output is safe in a script tag once "<" is escaped.
-      dangerouslySetInnerHTML={{ __html: JSON.stringify({ "@context": "https://schema.org", "@graph": graph }).replace(/</g, "\\u003c") }}
+      dangerouslySetInnerHTML={{
+        __html: JSON.stringify({
+          "@context": "https://schema.org",
+          "@graph": graph,
+        }).replace(/</g, "\\u003c"),
+      }}
     />
   );
 }

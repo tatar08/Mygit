@@ -79,7 +79,7 @@ Plus **the shelf** (`/shelf`): every repo people have looked up, with search and
 gitmanual never clones a repo or runs its code.
 
 1. **Read.** Three GitHub API calls (repo details, file list, latest release), then only the setup files from `raw.githubusercontent.com`: the README and setup guides, package manifests, version pins, Docker and CI files, and `.env` examples.
-2. **Work out.** Rules detect the stack (Node, Python, Go, Rust, Ruby, PHP, Java/Kotlin, .NET, Swift, Elixir, Clojure, Flutter, C/C++), versions, package managers, services and settings. README commands are kept only when they install *this* project.
+2. **Work out.** Rules detect the stack (Node, Python, Go, Rust, Ruby, PHP, Java/Kotlin, .NET, Swift, Elixir, Clojure, Flutter, C/C++), versions, package managers, services and settings. README commands are kept only when they install _this_ project.
 3. **Check.** Your browser works out your system and chip on your side, and the page compares them with what the repo supports.
 4. **Write.** The maintainers' own ways in come first, then steps for your system.
 
@@ -97,31 +97,31 @@ cp .env.example .env.local   # optional: add a GITHUB_TOKEN (recommended)
 npm run dev
 ```
 
-Open <http://localhost:3000> and paste a repo. Without any settings it works out of the box: history is kept in a local SQLite file (`data/gitmanual.db`), and GitHub allows about 20 new repos an hour. A [GitHub token](docs/self-hosting.md#2-a-github-token) raises that to thousands.
+Open <http://localhost:3035> and paste a repo. Without any settings it works out of the box: history is kept in a local SQLite file (`data/gitmanual.db`), and GitHub allows about 20 new repos an hour. A [GitHub token](docs/self-hosting.md#2-a-github-token) raises that to thousands.
 
-| Command | Does |
-|---|---|
-| `npm run dev` | Development server |
-| `npm run build` / `npm start` | Production build and server |
-| `npm run typecheck` | Type check |
-| `npm run check:scripts` | Build and check the setup script of every repo in the local database (`-- --add` also analyzes the test list) |
+| Command                       | Does                                                                                                          |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `npm run dev`                 | Development server                                                                                            |
+| `npm run build` / `npm start` | Production build and server                                                                                   |
+| `npm run typecheck`           | Type check                                                                                                    |
+| `npm run check:scripts`       | Build and check the setup script of every repo in the local database (`-- --add` also analyzes the test list) |
 
 ## Configuration
 
 All settings are environment variables, and every one is optional for local use. See [`.env.example`](.env.example) and the [self-hosting guide](docs/self-hosting.md).
 
-| Variable | What for |
-|---|---|
-| `GITHUB_TOKEN` | GitHub API limit 60 → 5,000 requests/hour. **Needed in production** |
-| `NEXT_PUBLIC_SITE_URL` | The site's address, for canonical links, the sitemap and share images. **Needed in production** |
-| `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` | Hosted database for history, cache and votes. **Needed in production** (falls back to a local file in development) |
-| `ANTHROPIC_API_KEY` | Optional: "Write my guide" (Claude) instead of the "Ask Claude / ChatGPT" links |
-| `NEXT_PUBLIC_REPO_URL` | Your fork's GitHub URL: a GitHub link with stars in the menu, and "Report a wrong setup" |
-| `CONTACT_FORM_URL` | A [ShareText](https://sharetext.net) form's embed link: adds "Contact" to the footer, opening the form over the page |
-| `RATE_LIMITS`, `LIMIT_SALT` | Limits are on by default (new analyses 40/hour per visitor and 1,000/hour in all, new AI guides 5/day and 100/day, votes once per repo and system a day). `RATE_LIMITS=off` turns them off; `LIMIT_SALT` is any random string that keeps visitor codes unguessable |
-| `FINDS_*`, `FB_PAGE_*`, `CRON_SECRET` | Optional [Finds](docs/self-hosting.md#7-optional-finds-from-a-facebook-page) page: posts from a Facebook Page, each linked to its manual |
-| `GITHUB_APP_*`, `SESSION_SECRET` | Optional: "Connect GitHub" for [private repos](#private-repos) and sign-in for free API keys. Without them, visitors can still paste their own read-only token |
-| `ADMIN_GITHUB_LOGINS` | Optional: GitHub usernames who can see and turn off API keys at `/admin/keys` |
+| Variable                                 | What for                                                                                                                                                                                                                                                           |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `GITHUB_TOKEN`                           | GitHub API limit 60 → 5,000 requests/hour. **Needed in production**                                                                                                                                                                                                |
+| `NEXT_PUBLIC_SITE_URL`                   | The site's address, for canonical links, the sitemap and share images. **Needed in production**                                                                                                                                                                    |
+| `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` | Hosted database for history, cache and votes. **Needed in production** (falls back to a local file in development)                                                                                                                                                 |
+| `ANTHROPIC_API_KEY`                      | Optional: "Write my guide" (Claude) instead of the "Ask Claude / ChatGPT" links                                                                                                                                                                                    |
+| `NEXT_PUBLIC_REPO_URL`                   | Your fork's GitHub URL: a GitHub link with stars in the menu, and "Report a wrong setup"                                                                                                                                                                           |
+| `CONTACT_FORM_URL`                       | A [ShareText](https://sharetext.net) form's embed link: adds "Contact" to the footer, opening the form over the page                                                                                                                                               |
+| `RATE_LIMITS`, `LIMIT_SALT`              | Limits are on by default (new analyses 40/hour per visitor and 1,000/hour in all, new AI guides 5/day and 100/day, votes once per repo and system a day). `RATE_LIMITS=off` turns them off; `LIMIT_SALT` is any random string that keeps visitor codes unguessable |
+| `FINDS_*`, `FB_PAGE_*`, `CRON_SECRET`    | Optional [Finds](docs/self-hosting.md#7-optional-finds-from-a-facebook-page) page: posts from a Facebook Page, each linked to its manual                                                                                                                           |
+| `GITHUB_APP_*`, `SESSION_SECRET`         | Optional: "Connect GitHub" for [private repos](#private-repos) and sign-in for free API keys. Without them, visitors can still paste their own read-only token                                                                                                     |
+| `ADMIN_GITHUB_LOGINS`                    | Optional: GitHub usernames who can see and turn off API keys at `/admin/keys`                                                                                                                                                                                      |
 
 ### Private repos
 

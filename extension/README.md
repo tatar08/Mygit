@@ -10,7 +10,7 @@ Adds **Setup manual** and **Ask** buttons to GitHub repos. On a repo's home page
 
 **Permissions:** `activeTab` (the toolbar icon reads the tab's address in Firefox), `sidePanel` (the panel), `storage` (the chat and your chosen system, on your device) and access to `gitmanual.com` (so the panel can ask with your sign-in).
 
-To try the panel against a local server, change `SITE` at the top of `sidepanel.js`, `background.js` and `content.js` to `http://localhost:3000`, and the `host_permissions` entry to `http://localhost:3000/*`. Change them back before zipping.
+To try the panel against a local server, change `SITE` at the top of `sidepanel.js`, `background.js` and `content.js` to `http://localhost:3035`, and the `host_permissions` entry to `http://localhost:3035/*`. Change them back before zipping.
 
 ## Try it locally
 

@@ -7,6 +7,7 @@ import { OS_LABEL, type OS } from "@/lib/os";
 import { OsIcon, ThemeIcon } from "./icons";
 import { RisingCard, ShelfCard } from "./cards";
 import { RepoForm, Wrenches, detectOS } from "./ui";
+import { useI18n } from "@/lib/i18n";
 
 type Demo = {
   repo: string;
@@ -130,25 +131,31 @@ export function Landing({
   }, [reduced, auto]);
 
   const fit = demo.fit[os];
+  const { t } = useI18n();
+
+  const fitText: Record<"yes" | "maybe" | "no", string> = {
+    yes: t("fitsYour"),
+    maybe: t("probablyFits"),
+    no: t("doesntFit"),
+  };
 
   return (
     <>
       <section className="hero">
         <div className="wrap hero-grid">
           <div className="hero-copy">
-            <p className="eyebrow">Setup manuals for open source</p>
+            <p className="eyebrow">{t("eyebrow")}</p>
             <h1 className="display">
-              Found it on GitHub?
+              {t("titleFound")}
               <br />
-              <span className="assembly">Get it running.</span>
+              <span className="assembly">{t("titleRunning")}</span>
             </h1>
             <p className="lead">
-              Paste any GitHub link. We&apos;ll check it works on your device, list the parts you need and write the steps for Mac, Windows or
-              Linux.
+              {t("lead")}
             </p>
             <RepoForm />
             <p className="try">
-              Try:
+              {t("try")}
               {EXAMPLES.map((r) => (
                 <Link key={r} href={`/${r}`} translate="no">
                   {r}
@@ -156,12 +163,12 @@ export function Landing({
               ))}
             </p>
             <p className="trick">
-              Shortcut: in any GitHub URL, change <s>hub</s> to <b>manual</b>
+              {t("shortcutPrefix")}<s>hub</s>{t("shortcutTo")}<b>manual</b>
               {extension ? (
                 <>
-                  , or add the{" "}
+                  {t("orAddExtension")}
                   <a href={extension} target="_blank" rel="noreferrer">
-                    Chrome extension
+                    {t("chromeExtension")}
                   </a>
                   .
                 </>
@@ -179,13 +186,13 @@ export function Landing({
             <div className="manual-top">
               <span translate="no">{demo.repo}</span>
               <span>
-                {demo.steps} steps · {demo.time} · <Wrenches n={demo.level} />
+                {demo.steps} {t("steps")} · {demo.time} · <Wrenches n={demo.level} />
               </span>
             </div>
 
             <div className="explode" key={demo.repo}>
               <div className={`sticker sticker-${fit}`}>
-                {FIT_TEXT[fit]} {OS_LABEL[os]} {fit === "yes" ? "✓" : "?"}
+                {fitText[fit]} {OS_LABEL[os]} {fit === "yes" ? "✓" : "?"}
                 {demo.fitNote && fit !== "yes" && <small>{demo.fitNote}</small>}
               </div>
               <ul className="parts-float">
@@ -218,7 +225,7 @@ export function Landing({
                 ))}
               </div>
               <Link className="open-link" href={`/${demo.repo}`}>
-                Open the manual →
+                {t("openManual")}
               </Link>
             </div>
           </div>
@@ -232,26 +239,26 @@ export function Landing({
       <section className="band" aria-labelledby="inside-h">
         <div className="wrap">
           <h2 id="inside-h" className="display-md">
-            Every manual comes in three parts
+            {t("threePartsTitle")}
           </h2>
           <ol className="pages">
             <li className="page">
               <span className="page-n">1</span>
               <DeviceArt />
-              <h3>Will it work on my device?</h3>
-              <p>A yes, maybe or no for your system and chip, plus the supported-devices list from the README.</p>
+              <h3>{t("part1Title")}</h3>
+              <p>{t("part1Desc")}</p>
             </li>
             <li className="page">
               <span className="page-n">2</span>
               <PartsArt />
-              <h3>Parts list</h3>
-              <p>Every runtime, tool, database and setting the project expects, read from its real files.</p>
+              <h3>{t("part2Title")}</h3>
+              <p>{t("part2Desc")}</p>
             </li>
             <li className="page">
               <span className="page-n">3</span>
               <StepsArt />
-              <h3>Assembly steps</h3>
-              <p>Copy-paste commands written for your OS, with fixes for the errors people hit most.</p>
+              <h3>{t("part3Title")}</h3>
+              <p>{t("part3Desc")}</p>
             </li>
           </ol>
         </div>
@@ -417,28 +424,29 @@ function Systems({ systems }: { systems: SystemLists[] }) {
 
 function Shelf({ recent, popular }: { recent: RepoCard[]; popular: RepoCard[] }) {
   const [tab, setTab] = useState<"recent" | "popular">("recent");
+  const { t, locale } = useI18n();
   const list = tab === "recent" ? recent : popular;
   return (
     <section className="shelf" aria-labelledby="shelf-h">
       <div className="wrap">
         <div className="shelf-head">
           <div>
-            <p className="eyebrow">From the shelf</p>
+            <p className="eyebrow">{t("shelfSectionTitle")}</p>
             <h2 id="shelf-h" className="display-md">
-              {tab === "recent" ? "Recently set up here" : "Most looked-up repos"}
+              {tab === "recent" ? (locale === "th" ? "โปรเจกต์ที่เปิดดูล่าสุด" : "Recently set up here") : (locale === "th" ? "โปรเจกต์ยอดนิยม" : "Most looked-up repos")}
             </h2>
           </div>
           <div className="shelf-actions">
           <div className="picker" role="tablist" aria-label="Sort repos">
             <button role="tab" aria-selected={tab === "recent"} className={tab === "recent" ? "on" : ""} onClick={() => setTab("recent")}>
-              recent
+              {t("recent")}
             </button>
             <button role="tab" aria-selected={tab === "popular"} className={tab === "popular" ? "on" : ""} onClick={() => setTab("popular")}>
-              popular
+              {t("popular")}
             </button>
           </div>
           <Link className="open-link" href="/shelf">
-            Browse the whole shelf →
+            {locale === "th" ? "ดูโปรเจกต์ทั้งหมดในคลัง →" : "Browse the whole shelf →"}
           </Link>
           </div>
         </div>

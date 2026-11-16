@@ -8,7 +8,9 @@ import { manualFacts, type ManualFacts } from "./manual";
 import { OS_LIST, type OS } from "./os";
 import { loadPrivate, loadRepo, type RepoData } from "./pipeline";
 
-export const SITE = (process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000").replace(/\/$/, "");
+export const SITE = (
+  process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3035"
+).replace(/\/$/, "");
 
 // The headers of the request being served, for code that's called without it (MCP tools), so new analyses
 // still count against the visitor who asked for them.
@@ -24,14 +26,18 @@ export function parseOs(v: string | null | undefined): OS | undefined {
 
 export function parseArch(v: string | null | undefined): Arch | null {
   const s = v?.toLowerCase();
-  return s === "arm64" || s === "aarch64" ? "arm64" : s === "x64" || s === "amd64" || s === "x86_64" ? "x64" : null;
+  return s === "arm64" || s === "aarch64"
+    ? "arm64"
+    : s === "x64" || s === "amd64" || s === "x86_64"
+      ? "x64"
+      : null;
 }
 
 // The caller's own GitHub token, for their private repos: the X-GitHub-Token header on API and MCP requests.
-export const callerToken = (headers: Headers) => headers.get("x-github-token")?.trim() || undefined;
+export const callerToken = (headers: Headers) =>
+  headers.get("x-github-token")?.trim() || undefined;
 
-const PRIVATE_HINT =
-  `Repository not found, or it's private. For your private repos, add your gitmanual API key and your own read-only GitHub token (see ${SITE}/developers).`;
+const PRIVATE_HINT = `Repository not found, or it's private. For your private repos, add your gitmanual API key and your own read-only GitHub token (see ${SITE}/developers).`;
 
 // A repo for the API and the MCP server. Public repos come from the shelf as usual (saved, fast); new ones count
 // against the caller's key or, without one, the anonymous limit (lib/apikeys.ts). Only when GitHub says "not
@@ -57,12 +63,37 @@ export async function loadForCaller(
 // One repo's manual facts for the JSON API and the MCP server. Accepts "owner/repo" or any GitHub link.
 export async function lookupManual(
   repo: string,
-  opts: { os?: OS; arch?: Arch | null; headers?: Headers; caller?: Caller } = {},
+  opts: {
+    os?: OS;
+    arch?: Arch | null;
+    headers?: Headers;
+    caller?: Caller;
+  } = {},
 ): Promise<{ facts: ManualFacts; caller: Caller }> {
   const ref = parseRepoUrl(repo);
-  if (!ref) throw new BadRequest(`"${repo}" isn't a GitHub repo. Use owner/repo, e.g. ollama/ollama.`);
+  if (!ref)
+    throw new BadRequest(
+      `"${repo}" isn't a GitHub repo. Use owner/repo, e.g. ollama/ollama.`,
+    );
   const headers = opts.headers ?? requestHeaders.getStore() ?? new Headers();
-  const { data, analyzedAt, caller } = await loadForCaller(ref, headers, opts.caller);
-  const votes = data.meta.private ? undefined : await getVotes(repoKey(...(data.meta.fullName.split("/") as [string, string])));
-  return { facts: manualFacts(data, analyzedAt, SITE, { os: opts.os, arch: opts.arch }, votes), caller };
+  const { data, analyzedAt, caller } = await loadForCaller(
+    ref,
+    headers,
+    opts.caller,
+  );
+  const votes = data.meta.private
+    ? undefined
+    : await getVotes(
+        repoKey(...(data.meta.fullName.split("/") as [string, string])),
+      );
+  return {
+    facts: manualFacts(
+      data,
+      analyzedAt,
+      SITE,
+      { os: opts.os, arch: opts.arch },
+      votes,
+    ),
+    caller,
+  };
 }

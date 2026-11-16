@@ -1,14 +1,17 @@
+"use client";
+
 import Link from "next/link";
+import { useState } from "react";
 import { compactCount } from "@/lib/format";
 import type { RepoCard } from "@/lib/db";
 import { Wrenches } from "./ui";
+import { useI18n } from "@/lib/i18n";
 
 const LEVEL: Record<string, { n: number; time: string }> = {
   Easy: { n: 1, time: "~5 min" },
   Moderate: { n: 2, time: "~15 min" },
   Involved: { n: 3, time: "30+ min" },
 };
-
 
 // Tagged for a day after the trending job finds it, so each day's batch stands out on the shelf.
 export const risingToday = (r: RepoCard) => r.risingAt !== null && Date.now() - r.risingAt < 864e5;
@@ -18,35 +21,125 @@ export const risingToday = (r: RepoCard) => r.risingAt !== null && Date.now() - 
 export function ShelfCard({ repo: r, href }: { repo: RepoCard; href?: string }) {
   const [owner, name] = r.fullName.split("/");
   const level = LEVEL[r.difficulty] ?? LEVEL.Moderate;
+  const { t } = useI18n();
+
+  const [installed, setInstalledState] = useState<boolean>(Boolean(r.installed));
+  const [removed, setRemoved] = useState<boolean>(false);
+  const [loadingInstalled, setLoadingInstalled] = useState(false);
+  const [loadingRemove, setLoadingRemove] = useState(false);
+
+  if (removed) {
+    return null;
+  }
+
+  const handleToggleInstalled = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (loadingInstalled) return;
+
+    const nextState = !installed;
+    setLoadingInstalled(true);
+    try {
+      const res = await fetch("/api/shelf", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fullName: r.fullName, installed: nextState }),
+      });
+      if (res.ok) {
+        setInstalledState(nextState);
+      }
+    } catch (err) {
+      console.error("Failed to update installed status:", err);
+    } finally {
+      setLoadingInstalled(false);
+    }
+  };
+
+  const handleRemove = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (loadingRemove) return;
+
+    if (!window.confirm(t("confirmRemove"))) return;
+
+    setLoadingRemove(true);
+    try {
+      const res = await fetch("/api/shelf", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fullName: r.fullName }),
+      });
+      if (res.ok) {
+        setRemoved(true);
+        try {
+          localStorage.removeItem(`gitmanual-shelf:${r.fullName.toLowerCase()}`);
+        } catch {}
+      }
+    } catch (err) {
+      console.error("Failed to remove from shelf:", err);
+    } finally {
+      setLoadingRemove(false);
+    }
+  };
+
   return (
-    <Link className="shelf-card" href={href ?? `/${r.fullName}`}>
-      <span className="shelf-top">
-        <span className="shelf-owner" translate="no">
-          {owner}/
+    <div className={`shelf-card ${installed ? "is-installed" : ""}`}>
+      <Link className="shelf-card-link" href={href ?? `/${r.fullName}`}>
+        <span className="shelf-top">
+          <span className="shelf-owner" translate="no">
+            {owner}/
+          </span>
+          <span className="shelf-top-badges">
+            {installed && (
+              <span className="installed-tag" title={t("installed")}>
+                ✓ {t("installed")}
+              </span>
+            )}
+            {risingToday(r) && <span className="rising-tag">Rising</span>}
+          </span>
+          <span className="shelf-stars num" title={`${r.stars.toLocaleString()} stars`}>
+            ★ {compactCount(r.stars)}
+          </span>
         </span>
-        {risingToday(r) && <span className="rising-tag">Rising</span>}
-        <span className="shelf-stars num" title={`${r.stars.toLocaleString()} stars`}>
-          ★ {compactCount(r.stars)}
+        <span className="shelf-name" translate="no">
+          {name}
         </span>
-      </span>
-      <span className="shelf-name" translate="no">
-        {name}
-      </span>
-      {r.description && <span className="shelf-desc">{r.description.replace(/:[a-z0-9_+-]+:\s*/g, "")}</span>}
-      <span className="shelf-spec">
-        <span className="shelf-level">
-          <Wrenches n={level.n} /> {r.difficulty}
-          <span className="shelf-time">{level.time}</span>
+        {r.description && <span className="shelf-desc">{r.description.replace(/:[a-z0-9_+-]+:\s*/g, "")}</span>}
+        <span className="shelf-spec">
+          <span className="shelf-level">
+            <Wrenches n={level.n} /> {r.difficulty}
+            <span className="shelf-time">{level.time}</span>
+          </span>
+          {r.language && <span className="chip">{r.language}</span>}
         </span>
-        {r.language && <span className="chip">{r.language}</span>}
-      </span>
-      <span className="shelf-foot">
-        {r.worked > 0 ? <span className="ok">✓ {r.worked} got it running</span> : <span />}
-        <span className="shelf-open" aria-hidden="true">
-          Open manual →
-        </span>
-      </span>
-    </Link>
+      </Link>
+
+      <div className="shelf-foot">
+        <div className="shelf-foot-left">
+          {r.worked > 0 ? <span className="ok">✓ {r.worked} got it running</span> : <span />}
+        </div>
+        <div className="shelf-actions" onClick={(e) => e.stopPropagation()}>
+          <button
+            type="button"
+            className={`shelf-btn-installed ${installed ? "active" : ""}`}
+            onClick={handleToggleInstalled}
+            disabled={loadingInstalled}
+            title={installed ? t("markUninstalled") : t("markInstalled")}
+          >
+            {loadingInstalled ? "..." : installed ? `✓ ${t("installed")}` : `+ ${t("markInstalled")}`}
+          </button>
+          <button
+            type="button"
+            className="shelf-btn-remove"
+            onClick={handleRemove}
+            disabled={loadingRemove}
+            title={t("removeFromShelf")}
+          >
+            {loadingRemove ? "..." : `🗑️ ${t("removeFromShelf")}`}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 

@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useCallback } from "react";
 import { compactCount } from "@/lib/format";
 import { parseRepoUrl } from "@/lib/github";
+import { useI18n, LanguageToggle } from "@/lib/i18n";
 import type { Arch } from "@/lib/install";
 import type { OS } from "@/lib/os";
 
@@ -37,6 +38,7 @@ export function repoPath(input: string): string | null {
 
 export function RepoForm({ initial = "", size = "lg", autoFocus }: { initial?: string; size?: "lg" | "sm"; autoFocus?: boolean }) {
   const router = useRouter();
+  const { t } = useI18n();
   const [value, setValue] = useState(initial);
   const [error, setError] = useState<string | null>(null);
   const [going, setGoing] = useState(false);
@@ -65,7 +67,7 @@ export function RepoForm({ initial = "", size = "lg", autoFocus }: { initial?: s
           type="text"
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          placeholder="owner/repo"
+          placeholder={t("placeholder")}
           name="repo"
           aria-label="GitHub repository link"
           inputMode="url"
@@ -76,7 +78,7 @@ export function RepoForm({ initial = "", size = "lg", autoFocus }: { initial?: s
       </label>
       <button className="btn btn-go" disabled={going}>
         {going ? <span className="spinner" /> : null}
-        {going ? "Opening…" : "Get the manual"}
+        {going ? t("opening") : t("getManual")}
       </button>
       {error && (
         <p className="addr-error" role="alert">
@@ -154,11 +156,21 @@ const NAV = [
 // The GitHub link only shows once the project's own repo is set (NEXT_PUBLIC_REPO_URL).
 export function NavLinks({ repo, stars, extension }: { repo: string | null; stars: number | null; extension: string | null }) {
   const path = usePathname();
+  const { t } = useI18n();
+
+  const navItems = [
+    { href: "/hot", label: t("hotRepo") },
+    { href: "/shelf", label: t("shelf") },
+    { href: "/private", label: t("private"), short: t("privateShort") },
+    { href: "/developers", label: t("api"), short: t("apiShort") },
+    { href: "/how-it-works", label: t("how") },
+  ];
+
   return (
     <>
       {path !== "/" && <NavSearch />}
       <nav className="nav-links" aria-label="Site">
-        {NAV.map(([href, label, short]: readonly [string, string, string?]) => (
+        {navItems.map(({ href, label, short }) => (
           <Link key={href} href={href} aria-current={path === href ? "page" : undefined} aria-label={short ? label : undefined}>
             {short ? (
               <>
@@ -192,7 +204,7 @@ export function NavLinks({ repo, stars, extension }: { repo: string | null; star
                 d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"
               />
             </svg>
-            Star
+            {t("star")}
             </span>
             {stars !== null && (
               <span className="nav-stars num">
@@ -204,8 +216,378 @@ export function NavLinks({ repo, stars, extension }: { repo: string | null; star
             )}
           </a>
         )}
+        <LanguageToggle />
       </nav>
     </>
+  );
+}
+
+export function AddProjectButton({ className = "" }: { className?: string }) {
+  const [open, setOpen] = useState(false);
+  const { t } = useI18n();
+
+  return (
+    <>
+      <button
+        type="button"
+        className={`nav-add-btn ${className}`}
+        onClick={() => setOpen(true)}
+        aria-label={t("addProject")}
+        title={t("addProject")}
+      >
+        <span className="add-plus" aria-hidden="true">+</span>
+        <span>{t("addProject")}</span>
+      </button>
+      {open && <AddProjectModal onClose={() => setOpen(false)} />}
+    </>
+  );
+}
+
+export function SaveToShelfButton({
+  fullName,
+  className = "",
+}: {
+  fullName: string;
+  className?: string;
+}) {
+  const router = useRouter();
+  const { t, locale } = useI18n();
+  const [saved, setSaved] = useState<boolean>(false);
+  const [installed, setInstalledState] = useState<boolean>(false);
+  const [saving, setSaving] = useState(false);
+  const [loadingInstalled, setLoadingInstalled] = useState(false);
+  const [loadingRemove, setLoadingRemove] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    fetch(`/api/shelf?fullName=${encodeURIComponent(fullName)}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!active || !data) return;
+        setSaved(Boolean(data.saved));
+        setInstalledState(Boolean(data.installed));
+        if (data.saved) {
+          try {
+            localStorage.setItem(`gitmanual-shelf:${fullName.toLowerCase()}`, "1");
+          } catch {}
+        }
+      })
+      .catch(() => {
+        try {
+          const isSaved = localStorage.getItem(`gitmanual-shelf:${fullName.toLowerCase()}`) === "1";
+          if (isSaved && active) setSaved(true);
+        } catch {}
+      });
+    return () => {
+      active = false;
+    };
+  }, [fullName]);
+
+  const handleSave = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (saved) {
+      router.push("/shelf");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const [owner, repo] = fullName.split("/");
+      const res = await fetch("/api/shelf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ owner, repo }),
+      });
+      if (res.ok) {
+        setSaved(true);
+        try {
+          localStorage.setItem(`gitmanual-shelf:${fullName.toLowerCase()}`, "1");
+        } catch {}
+      }
+    } catch (err) {
+      console.error("Failed to save to shelf:", err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleToggleInstalled = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (loadingInstalled) return;
+
+    const next = !installed;
+    setLoadingInstalled(true);
+    try {
+      const res = await fetch("/api/shelf", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fullName, installed: next }),
+      });
+      if (res.ok) {
+        setInstalledState(next);
+      }
+    } catch (err) {
+      console.error("Failed to toggle installed status:", err);
+    } finally {
+      setLoadingInstalled(false);
+    }
+  };
+
+  const handleRemove = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (loadingRemove) return;
+
+    if (!window.confirm(t("confirmRemove"))) return;
+
+    setLoadingRemove(true);
+    try {
+      const res = await fetch("/api/shelf", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fullName }),
+      });
+      if (res.ok) {
+        setSaved(false);
+        setInstalledState(false);
+        try {
+          localStorage.removeItem(`gitmanual-shelf:${fullName.toLowerCase()}`);
+        } catch {}
+      }
+    } catch (err) {
+      console.error("Failed to remove from shelf:", err);
+    } finally {
+      setLoadingRemove(false);
+    }
+  };
+
+  return (
+    <div className={`save-shelf-wrap ${className}`}>
+      {saved ? (
+        <div className="save-shelf-group">
+          <button
+            type="button"
+            className="btn-save-shelf saved"
+            onClick={handleSave}
+            title={locale === "th" ? "คลิกเพื่อไปที่คลังโปรเจกต์" : "Click to view shelf"}
+          >
+            <span className="save-icon">✓</span>
+            <span>{t("savedToShelf")}</span>
+            <span className="shelf-link-arrow">· {t("viewInShelf")}</span>
+          </button>
+          <button
+            type="button"
+            className={`btn-shelf-installed ${installed ? "active" : ""}`}
+            onClick={handleToggleInstalled}
+            disabled={loadingInstalled}
+            title={installed ? t("markUninstalled") : t("markInstalled")}
+          >
+            {loadingInstalled ? "..." : installed ? `✓ ${t("installed")}` : `+ ${t("markInstalled")}`}
+          </button>
+          <button
+            type="button"
+            className="btn-shelf-remove"
+            onClick={handleRemove}
+            disabled={loadingRemove}
+            title={t("removeFromShelf")}
+          >
+            {loadingRemove ? "..." : `🗑️ ${t("removeFromShelf")}`}
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          className="btn-save-shelf"
+          onClick={handleSave}
+          disabled={saving}
+          title={t("addToShelf")}
+        >
+          {saving ? (
+            <>
+              <span className="spinner" />
+              <span>{t("addingToShelf")}</span>
+            </>
+          ) : (
+            <>
+              <span className="save-icon">+</span>
+              <span>{t("addToShelf")}</span>
+            </>
+          )}
+        </button>
+      )}
+    </div>
+  );
+}
+
+export function AddProjectModal({ onClose }: { onClose: () => void }) {
+  const router = useRouter();
+  const { t, locale } = useI18n();
+  const [value, setValue] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const path = repoPath(value);
+    if (!path) {
+      setError(
+        locale === "th"
+          ? "กรุณากรอกในรูปแบบ owner/repo หรือวาง URL เต็ม เช่น facebook/react"
+          : "Please enter as owner/repo or paste a full GitHub link, e.g. facebook/react",
+      );
+      return;
+    }
+    setError(null);
+    setLoading(true);
+    onClose();
+    router.push(path);
+  };
+
+  const handleQuickAdd = (repo: string) => {
+    setValue(repo);
+    const path = repoPath(repo);
+    if (path) {
+      onClose();
+      router.push(path);
+    }
+  };
+
+  return (
+    <div className="add-modal-backdrop" onClick={onClose} role="dialog" aria-modal="true">
+      <div className="add-modal-box" onClick={(e) => e.stopPropagation()}>
+        <div className="add-modal-head">
+          <div className="add-modal-title">
+            <span className="add-modal-icon">📦</span>
+            <h3>{t("addProjectModalTitle")}</h3>
+          </div>
+          <button type="button" className="add-modal-close" onClick={onClose} aria-label="Close">
+            ✕
+          </button>
+        </div>
+
+        <p className="add-modal-desc">{t("addProjectModalDesc")}</p>
+
+        <form onSubmit={handleSubmit} className="add-modal-form">
+          <div className="add-input-wrap">
+            <input
+              type="text"
+              value={value}
+              onChange={(e) => {
+                setValue(e.target.value);
+                setError(null);
+              }}
+              placeholder={t("addProjectInputPlaceholder")}
+              autoFocus
+              className="add-input"
+              spellCheck={false}
+            />
+          </div>
+
+          {error && <p className="add-error">{error}</p>}
+
+          <div className="add-modal-suggestions">
+            <span className="add-sugg-label">{locale === "th" ? "ตัวอย่างด่วน:" : "Quick examples:"}</span>
+            <div className="add-sugg-pills">
+              {["ollama/ollama", "facebook/react", "jaturapornchai/domepos", "bex-co/bex"].map((ex) => (
+                <button
+                  type="button"
+                  key={ex}
+                  className="add-pill"
+                  onClick={() => handleQuickAdd(ex)}
+                >
+                  {ex}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="add-modal-actions">
+            <button type="button" className="btn btn-sm" onClick={onClose}>
+              {t("cancel")}
+            </button>
+            <button type="submit" className="btn btn-sm btn-go" disabled={loading || !value.trim()}>
+              {loading ? <span className="spinner" /> : null}
+              {loading ? t("opening") : t("addProjectSubmit")}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+export function SiteFooter({ repo, contactForm, pro, extension }: { repo: string | null; contactForm: string | null; pro: boolean; extension: string | null }) {
+  const { t } = useI18n();
+  return (
+    <footer className="footer">
+      <div className="wrap footer-grid">
+        <div className="footer-brand">
+          <Link className="wordmark" href="/">
+            <Logo />
+            gitmanual
+          </Link>
+          <p>
+            {t("tagline")}
+          </p>
+          {contactForm && <ContactButton form={contactForm} />}
+        </div>
+        <nav className="footer-col" aria-label="Use gitmanual">
+          <h2>{t("shelfSectionTitle")}</h2>
+          <Link href="/">{t("getManual")}</Link>
+          <Link href="/shelf">{t("shelf")}</Link>
+          <Link href="/lists">Lists</Link>
+          <Link href="/private">{t("private")}</Link>
+          <Link href="/how-it-works">{t("how")}</Link>
+          <Link href="/developers">{t("api")}</Link>
+          {pro && <Link href="/pro">GitManual Pro</Link>}
+          {extension && (
+            <a href={extension} target="_blank" rel="noreferrer">
+              {t("chromeExtension")}&nbsp;↗
+            </a>
+          )}
+        </nav>
+        {repo && (
+          <nav className="footer-col" aria-label="Open source">
+            <h2>Open source</h2>
+            <a href={repo} target="_blank" rel="noreferrer">
+              GitHub&nbsp;↗
+            </a>
+            <a
+              href={`${repo}/issues/new/choose`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              {t("reportWrong")}
+            </a>
+            <a
+              href={`${repo}/blob/main/docs/self-hosting.md`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              {t("hostYourOwn")}
+            </a>
+            <a
+              href={`${repo}#whats-in-every-manual`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              {t("readmeBadge")}
+            </a>
+          </nav>
+        )}
+      </div>
+      <div className="wrap footer-base">
+        <span>© {new Date().getFullYear()} gitmanual · MIT license</span>
+        <nav className="footer-legal" aria-label="About this site">
+          <Link href="/about">{t("about")}</Link>
+          <Link href="/privacy">{t("privacy")}</Link>
+          <Link href="/terms">{t("terms")}</Link>
+          <Link href="/contact">{t("contact")}</Link>
+        </nav>
+        <span>
+          {t("disclaimer")}
+        </span>
+      </div>
+    </footer>
   );
 }
 

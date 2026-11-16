@@ -16,6 +16,7 @@ export type RepoCard = {
   stuck: number;
   analyzedAt: number;
   risingAt: number | null; // when the trending job last found it rising
+  installed?: boolean;
 };
 
 export type Votes = { worked: number; stuck: number; byOs: Record<string, { worked: number; stuck: number }> };
@@ -31,7 +32,9 @@ const SCHEMA = `
     data TEXT NOT NULL,             -- the full /api/analyze response
     analyzed_at INTEGER NOT NULL,
     views INTEGER NOT NULL DEFAULT 0,
-    last_viewed INTEGER NOT NULL
+    last_viewed INTEGER NOT NULL,
+    installed INTEGER NOT NULL DEFAULT 0,
+    in_shelf INTEGER NOT NULL DEFAULT 0
   );
   CREATE TABLE IF NOT EXISTS votes (
     key TEXT NOT NULL,
@@ -130,9 +133,10 @@ const store = globalThis as typeof globalThis & { gitmanualDb?: Promise<Client |
 
 function db(): Promise<Client | null> {
   store.gitmanualDb ??= (async () => {
-    const url = process.env.TURSO_DATABASE_URL ?? (process.env.VERCEL ? null : `file:${process.env.GITMANUAL_DB ?? "data/gitmanual.db"}`);
+    const tursoUrl = process.env.TURSO_DATABASE_URL?.trim();
+    const url = tursoUrl || (process.env.VERCEL ? null : `file:${process.env.GITMANUAL_DB?.trim() || "data/gitmanual.db"}`);
     if (!url) {
-      console.warn("gitmanual: TURSO_DATABASE_URL is not set, so history and caching are off.");
+      console.warn("gitmanual: No database URL set, history and caching are off.");
       return null;
     }
     if (url.startsWith("file:")) {
@@ -142,6 +146,10 @@ function db(): Promise<Client | null> {
     }
     const client = createClient({ url, authToken: process.env.TURSO_AUTH_TOKEN });
     try {
+      if (url.startsWith("file:")) {
+        await client.execute("PRAGMA journal_mode = WAL;").catch(() => {});
+        await client.execute("PRAGMA busy_timeout = 5000;").catch(() => {});
+      }
       await client.executeMultiple(SCHEMA);
       // Columns added after a table first shipped; "duplicate column" just means it's already there.
       for (const sql of [
@@ -149,6 +157,8 @@ function db(): Promise<Client | null> {
         "ALTER TABLE repos ADD COLUMN rising_at INTEGER", // when the daily trending job last found it rising
         "ALTER TABLE repos ADD COLUMN facets TEXT", // searchable facts for lists and suggestions (lib/facets.ts)
         "ALTER TABLE chat_spend ADD COLUMN repo TEXT", // lower-case owner/repo the answer was about (public repos only)
+        "ALTER TABLE repos ADD COLUMN installed INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE repos ADD COLUMN in_shelf INTEGER NOT NULL DEFAULT 0",
       ])
         await client.execute(sql).catch(() => {});
       // "Got it running" counts kept on the repo, so lists and the shelf don't join and group the votes table.
@@ -268,7 +278,94 @@ export function repoKey(owner: string, repo: string, ref?: string): string {
 
 // Whether a repo is on the shelf, without loading its manual.
 export function hasRepo(key: string): Promise<boolean> {
-  return safely(false, async (c) => (await c.execute({ sql: "SELECT 1 FROM repos WHERE key = ?", args: [key] })).rows.length > 0);
+  return safely(false, async (c) => (await c.execute({ sql: "SELECT 1 FROM repos WHERE key = ?", args: [key.toLowerCase()] })).rows.length > 0);
+}
+
+// Remove a repo from the user's shelf (keeps cached analysis, resets in_shelf & installed).
+export function removeRepo(key: string): Promise<boolean> {
+  return safely(false, async (c) => {
+    const k = key.toLowerCase();
+    await c.execute({ sql: "UPDATE repos SET in_shelf = 0, installed = 0 WHERE key = ?", args: [k] });
+    return true;
+  });
+}
+
+// Explicitly add or remove a repo from the user's shelf.
+export function setInShelf(key: string, inShelf: boolean): Promise<boolean> {
+  return safely(false, async (c) => {
+    await c.execute({
+      sql: "UPDATE repos SET in_shelf = ? WHERE key = ?",
+      args: [inShelf ? 1 : 0, key.toLowerCase()],
+    });
+    return true;
+  });
+}
+
+// Save a lightweight bookmark to the shelf when full GitHub analysis isn't available yet (e.g. rate limit).
+export function saveShelfBookmark(
+  key: string,
+  r: { fullName: string; description: string | null; stars: number; language: string | null },
+): Promise<boolean> {
+  return safely(false, async (c) => {
+    const k = key.toLowerCase();
+    const now = Date.now();
+    await c.execute({
+      sql: `INSERT INTO repos (key, full_name, description, stars, language, difficulty, data, analyzed_at, views, last_viewed, in_shelf)
+            VALUES (?, ?, ?, ?, ?, 'Moderate', '{}', 0, 0, ?, 1)
+            ON CONFLICT(key) DO UPDATE SET in_shelf = 1`,
+      args: [k, r.fullName, r.description, r.stars, r.language, now],
+    });
+    return true;
+  });
+}
+
+// Mark a repo as installed or not installed (also ensures it is on the shelf when marked installed).
+export function setInstalled(key: string, installed: boolean): Promise<boolean> {
+  return safely(false, async (c) => {
+    await c.execute({
+      sql: installed
+        ? "UPDATE repos SET installed = 1, in_shelf = 1 WHERE key = ?"
+        : "UPDATE repos SET installed = 0 WHERE key = ?",
+      args: [key.toLowerCase()],
+    });
+    return true;
+  });
+}
+
+// Check saved (in_shelf) and installed status for a repo.
+export function getRepoStatus(key: string): Promise<{ saved: boolean; installed: boolean }> {
+  return safely({ saved: false, installed: false }, async (c) => {
+    const res = await c.execute({
+      sql: "SELECT COALESCE(in_shelf, 0) AS in_shelf, COALESCE(installed, 0) AS installed FROM repos WHERE key = ?",
+      args: [key.toLowerCase()],
+    });
+    if (res.rows.length === 0) return { saved: false, installed: false };
+    return {
+      saved: Number(res.rows[0].in_shelf) === 1,
+      installed: Number(res.rows[0].installed) === 1,
+    };
+  });
+}
+
+// Batch-check saved (in_shelf) and installed status for a list of repos.
+export async function getRepoStatuses(fullNames: string[]): Promise<Record<string, { saved: boolean; installed: boolean }>> {
+  if (!fullNames.length) return {};
+  return safely({}, async (c) => {
+    const keys = fullNames.map((n) => n.toLowerCase());
+    const placeholders = keys.map(() => "?").join(",");
+    const res = await c.execute({
+      sql: `SELECT key, COALESCE(in_shelf, 0) AS in_shelf, COALESCE(installed, 0) AS installed FROM repos WHERE key IN (${placeholders})`,
+      args: keys,
+    });
+    const map: Record<string, { saved: boolean; installed: boolean }> = {};
+    for (const row of res.rows) {
+      map[String(row.key)] = {
+        saved: Number(row.in_shelf) === 1,
+        installed: Number(row.installed) === 1,
+      };
+    }
+    return map;
+  });
 }
 
 export function getCached(key: string): Promise<{ data: unknown; analyzedAt: number } | null> {
@@ -508,6 +605,7 @@ export type ShelfQuery = {
   minStars?: number;
   sort?: "stars" | "recent" | "popular" | "worked";
   rising?: boolean; // only repos rising this week
+  installed?: boolean; // filter by installed status
   os?: string; // only repos that run on this system (verdict yes), for the API
   page?: number;
   perPage?: number; // defaults to SHELF_PAGE
@@ -527,7 +625,7 @@ export function browseRepos(
   query: ShelfQuery,
 ): Promise<{ repos: RepoCard[]; total: number; languages: { name: string; count: number }[]; all: number; rising: number }> {
   return safely({ repos: [], total: 0, languages: [], all: 0, rising: 0 }, async (c) => {
-    const where = ["r.key NOT LIKE '%@%'"];
+    const where = ["r.key NOT LIKE '%@%'", "COALESCE(r.in_shelf, 0) = 1"];
     const args: (string | number)[] = [];
     if (query.q) {
       where.push("(r.full_name LIKE ? OR r.description LIKE ?)");
@@ -549,6 +647,10 @@ export function browseRepos(
       where.push("r.facets LIKE ?");
       args.push(`% os:${query.os} %`);
     }
+    if (query.installed !== undefined) {
+      where.push("COALESCE(r.installed, 0) = ?");
+      args.push(query.installed ? 1 : 0);
+    }
     const weekAgo = Date.now() - 7 * 864e5;
     if (query.rising) {
       where.push("r.rising_at > ?");
@@ -560,7 +662,7 @@ export function browseRepos(
     const [rows, count, langs, rising] = await Promise.all([
       c.execute({
         sql: `SELECT r.full_name, r.description, r.stars, r.language, r.difficulty, r.views, r.analyzed_at, r.rising_at,
-                     r.worked, r.stuck
+                     r.worked, r.stuck, COALESCE(r.installed, 0) AS installed
               FROM repos r
               WHERE ${filter}
               ORDER BY ${SHELF_ORDER[query.sort ?? "stars"]}
@@ -569,11 +671,11 @@ export function browseRepos(
       }),
       c.execute({ sql: `SELECT COUNT(*) AS n FROM repos r WHERE ${filter}`, args }),
       c.execute(
-        "SELECT language, COUNT(*) AS n FROM repos WHERE key NOT LIKE '%@%' AND language IS NOT NULL GROUP BY language ORDER BY n DESC, language",
+        "SELECT language, COUNT(*) AS n FROM repos WHERE key NOT LIKE '%@%' AND COALESCE(in_shelf, 0) = 1 AND language IS NOT NULL GROUP BY language ORDER BY n DESC, language",
       ),
       // The whole shelf and this week's rising repos, for the All / Rising switch.
       c.execute({
-        sql: "SELECT COUNT(*) AS n, COALESCE(SUM(rising_at > ?), 0) AS rising FROM repos WHERE key NOT LIKE '%@%'",
+        sql: "SELECT COUNT(*) AS n, COALESCE(SUM(rising_at > ?), 0) AS rising FROM repos WHERE key NOT LIKE '%@%' AND COALESCE(in_shelf, 0) = 1",
         args: [weekAgo],
       }),
     ]);
@@ -589,6 +691,7 @@ export function browseRepos(
         stuck: Number(r.stuck),
         analyzedAt: Number(r.analyzed_at),
         risingAt: r.rising_at == null ? null : Number(r.rising_at),
+        installed: Boolean(Number(r.installed ?? 0) === 1),
       })),
       total: Number(count.rows[0]?.n ?? 0),
       languages: langs.rows.map((r) => ({ name: String(r.language), count: Number(r.n) })),

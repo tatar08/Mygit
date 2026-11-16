@@ -18,7 +18,7 @@ git clone https://github.com/zainudinnoori/gitmanual.git
 cd gitmanual
 npm install
 cp .env.example .env.local
-npm run dev                  # http://localhost:3000
+npm run dev                  # http://localhost:3035
 ```
 
 Without a database URL, history is kept in `data/gitmanual.db` (SQLite). Set `GITMANUAL_DB` to use another path. The `data/` folder is git-ignored.
@@ -28,7 +28,7 @@ Without a database URL, history is kept in `data/gitmanual.db` (SQLite). Set `GI
 Without a token GitHub allows 60 API requests an hour, and each new repo uses 3, so about 20 repos an hour. With a token it's 5,000.
 
 1. Open <https://github.com/settings/personal-access-tokens/new> (fine-grained token).
-2. **Repository access:** *Public repositories*. **Permissions:** leave them all as they are; none are needed.
+2. **Repository access:** _Public repositories_. **Permissions:** leave them all as they are; none are needed.
 3. Generate it and put it in `.env.local` (and later in your host's settings):
 
    ```
@@ -56,12 +56,12 @@ Tables are created on the first request, and new columns are added automatically
 1. Push your fork to GitHub and import it at <https://vercel.com/new>, or use the **Deploy** button in the README.
 2. Add these environment variables:
 
-   | Variable | Value |
-   |---|---|
-   | `GITHUB_TOKEN` | From step 2 |
-   | `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` | From step 3 |
-   | `NEXT_PUBLIC_SITE_URL` | Your address, e.g. `https://gitmanual.com` |
-   | `NEXT_PUBLIC_REPO_URL` | Optional: your fork, e.g. `https://github.com/you/gitmanual` |
+   | Variable                                 | Value                                                        |
+   | ---------------------------------------- | ------------------------------------------------------------ |
+   | `GITHUB_TOKEN`                           | From step 2                                                  |
+   | `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` | From step 3                                                  |
+   | `NEXT_PUBLIC_SITE_URL`                   | Your address, e.g. `https://gitmanual.com`                   |
+   | `NEXT_PUBLIC_REPO_URL`                   | Optional: your fork, e.g. `https://github.com/you/gitmanual` |
 
 3. Deploy, then add your domain under **Settings → Domains**.
 4. After launch: submit `https://<your-site>/sitemap.xml` in Google Search Console.
@@ -94,6 +94,7 @@ FINDS_URL=https://www.facebook.com/<your-page>
 ### Sync the Page automatically
 
 A post shows up when it points to a repo, checked in this order:
+
 1. a `gitmanual.com/owner/repo` or `github.com/owner/repo` link in the caption,
 2. the same kind of link in the Page's own comments,
 3. the caption naming a repo that's already on the shelf.
@@ -142,18 +143,18 @@ A file with the same `url` as a synced post overrides it, which is handy for fix
 
 ## All settings
 
-| Variable | Needed | What for |
-|---|---|---|
-| `GITHUB_TOKEN` | production | GitHub API limit 60 → 5,000 requests/hour |
-| `NEXT_PUBLIC_SITE_URL` | production | Canonical links, sitemap, share images and posters |
-| `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` | production | Hosted database. Locally a SQLite file is used |
-| `GITMANUAL_DB` | | Path of the local SQLite file (default `data/gitmanual.db`) |
-| `ANTHROPIC_API_KEY` | | "Write my guide" (Claude); without it, "Ask Claude / ChatGPT" links |
-| `NEXT_PUBLIC_REPO_URL` | | GitHub link with stars in the menu; "Report a wrong setup" |
-| `FINDS_NAME`, `FINDS_ABOUT`, `FINDS_URL`, `FINDS_AVATAR` | | The Finds page (on when `FINDS_NAME` is set) |
-| `FB_PAGE_ID`, `FB_PAGE_TOKEN`, `FB_GRAPH_VERSION` | | Facebook Page sync (Graph API version defaults to `v23.0`) |
-| `CRON_SECRET` | with the sync | Protects `/api/cron/facebook` |
-| `NEXT_CHROME_EXTENSION_URL` | | The browser extension's store page: a link in the footer and on the home page |
-| `CONTACT_FORM_URL` | | A ShareText form's embed link (`https://sharetext.net/form/<code>/embed`): adds "Contact" to the footer. Its script loads only when someone opens the form |
-| `LIMIT_SALT` | production | Any long random string; keeps the daily visitor codes used for rate limits unguessable |
-| `RATE_LIMITS` | | `off` turns rate limits off (they're on by default; see `lib/limit.ts`) |
+| Variable                                                 | Needed        | What for                                                                                                                                                   |
+| -------------------------------------------------------- | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GITHUB_TOKEN`                                           | production    | GitHub API limit 60 → 5,000 requests/hour                                                                                                                  |
+| `NEXT_PUBLIC_SITE_URL`                                   | production    | Canonical links, sitemap, share images and posters                                                                                                         |
+| `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`                 | production    | Hosted database. Locally a SQLite file is used                                                                                                             |
+| `GITMANUAL_DB`                                           |               | Path of the local SQLite file (default `data/gitmanual.db`)                                                                                                |
+| `ANTHROPIC_API_KEY`                                      |               | "Write my guide" (Claude); without it, "Ask Claude / ChatGPT" links                                                                                        |
+| `NEXT_PUBLIC_REPO_URL`                                   |               | GitHub link with stars in the menu; "Report a wrong setup"                                                                                                 |
+| `FINDS_NAME`, `FINDS_ABOUT`, `FINDS_URL`, `FINDS_AVATAR` |               | The Finds page (on when `FINDS_NAME` is set)                                                                                                               |
+| `FB_PAGE_ID`, `FB_PAGE_TOKEN`, `FB_GRAPH_VERSION`        |               | Facebook Page sync (Graph API version defaults to `v23.0`)                                                                                                 |
+| `CRON_SECRET`                                            | with the sync | Protects `/api/cron/facebook`                                                                                                                              |
+| `NEXT_CHROME_EXTENSION_URL`                              |               | The browser extension's store page: a link in the footer and on the home page                                                                              |
+| `CONTACT_FORM_URL`                                       |               | A ShareText form's embed link (`https://sharetext.net/form/<code>/embed`): adds "Contact" to the footer. Its script loads only when someone opens the form |
+| `LIMIT_SALT`                                             | production    | Any long random string; keeps the daily visitor codes used for rate limits unguessable                                                                     |
+| `RATE_LIMITS`                                            |               | `off` turns rate limits off (they're on by default; see `lib/limit.ts`)                                                                                    |

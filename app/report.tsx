@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import type { Analysis } from "@/lib/detect";
 import type { Guides } from "@/lib/guides";
@@ -10,7 +10,16 @@ import type { Pick } from "@/lib/picks";
 import { fitCheck, freshness, setupTime } from "@/lib/fit";
 import { compactCount } from "@/lib/format";
 // import { setupFlow } from "@/lib/flow"; — for the route diagram, see `flow` in Report
-import { addonLinks, installChoices, venvFolder, withVenv, type Arch, type Asset, type InstallKind, type InstallOptions } from "@/lib/install";
+import {
+  addonLinks,
+  installChoices,
+  venvFolder,
+  withVenv,
+  type Arch,
+  type Asset,
+  type InstallKind,
+  type InstallOptions,
+} from "@/lib/install";
 import { OS_LABEL, OS_LIST, OS_SLUG, type OS } from "@/lib/os";
 import { buildScript } from "@/lib/script";
 import { proUrl } from "@/lib/site";
@@ -18,7 +27,19 @@ import { proUrl } from "@/lib/site";
 import { disconnect, fetchPrivate, PrivateAccess } from "./private";
 import { CarbonAd } from "./carbon";
 import { Chat } from "./chat";
-import { CodeBlock, CopyButton, RepoForm, Wrenches, detectArch, detectOS } from "./ui";
+import { ShowcaseSection } from "./showcase";
+import { extractShowcase } from "@/lib/showcase";
+import {
+  AddProjectButton,
+  CodeBlock,
+  CopyButton,
+  RepoForm,
+  SaveToShelfButton,
+  Wrenches,
+  detectArch,
+  detectOS,
+} from "./ui";
+import { useI18n } from "@/lib/i18n";
 
 type Result = {
   meta: {
@@ -50,7 +71,11 @@ type Result = {
   votes: Votes;
 };
 
-type Votes = { worked: number; stuck: number; byOs: Record<string, { worked: number; stuck: number }> };
+type Votes = {
+  worked: number;
+  stuck: number;
+  byOs: Record<string, { worked: number; stuck: number }>;
+};
 
 export type Mode = "install" | "source";
 
@@ -64,41 +89,78 @@ function archLabel(arch: Arch | null, os: OS): string | null {
 }
 
 // README links are relative to the repo; point them at GitHub so they work here.
-function repoUrl(url: string, key: string, htmlUrl: string, branch: string): string {
-  if (/^([a-z][a-z0-9+.-]*:|#|\/\/)/i.test(url)) return defaultUrlTransform(url);
+function repoUrl(
+  url: string,
+  key: string,
+  htmlUrl: string,
+  branch: string,
+): string {
+  if (/^([a-z][a-z0-9+.-]*:|#|\/\/)/i.test(url))
+    return defaultUrlTransform(url);
   const path = url.replace(/^\.?\//, "");
-  const base = key === "src" ? `${htmlUrl.replace("github.com", "raw.githubusercontent.com")}/${branch}` : `${htmlUrl}/blob/${branch}`;
+  const base =
+    key === "src"
+      ? `${htmlUrl.replace("github.com", "raw.githubusercontent.com")}/${branch}`
+      : `${htmlUrl}/blob/${branch}`;
   return defaultUrlTransform(`${base}/${path}`);
 }
 
 function formatSize(bytes: number): string {
-  return bytes > 1e6 ? `${(bytes / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1e3))} KB`;
+  return bytes > 1e6
+    ? `${(bytes / 1e6).toFixed(1)} MB`
+    : `${Math.max(1, Math.round(bytes / 1e3))} KB`;
 }
 
-const inline = { p: ({ children }: { children?: React.ReactNode }) => <>{children}</> };
+const inline = {
+  p: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
+};
 // README code blocks: code-highlighting browser extensions (Prism) add a class and tabindex to <pre> before React
 // loads, which React reports as a hydration mismatch. Only the <pre>'s own attributes are let through.
-const blocks = { pre: ({ node: _node, ...props }: React.ComponentProps<"pre"> & { node?: unknown }) => <pre suppressHydrationWarning {...props} /> };
+const blocks = {
+  pre: ({
+    node: _node,
+    ...props
+  }: React.ComponentProps<"pre"> & { node?: unknown }) => (
+    <pre suppressHydrationWarning {...props} />
+  ),
+};
 
-const LOADING_LINES = ["Opening the box…", "Reading the README…", "Counting the parts…", "Checking your device…", "Writing the steps…"];
+const LOADING_LINES = [
+  "Opening the box…",
+  "Reading the README…",
+  "Counting the parts…",
+  "Checking your device…",
+  "Writing the steps…",
+];
 
 export type { Result as ReportData };
 
 export function defaultMode(r: Result): Mode {
   // Device-only downloads (.apk) are usually extras; the computer-side setup is the main path then.
-  return r.install.platforms.length || r.install.commands.length ? "install" : "source";
+  return r.install.platforms.length || r.install.commands.length
+    ? "install"
+    : "source";
 }
 
 // Without a server key, "Still stuck?" hands the manual to the visitor's own AI chat: the prompt goes in the link,
 // and nothing is sent anywhere until they open it. Commands are trimmed so the link stays a sensible length.
 function askPrompt(result: Result, os: OS, arch: Arch | null): string {
   const { meta, analysis: a } = result;
-  const site = (process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000").replace(/\/$/, "");
+  const site = (
+    process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3035"
+  ).replace(/\/$/, "");
   const shell = os === "windows" ? "PowerShell" : os === "mac" ? "zsh" : "bash";
   const chip = archLabel(arch, os);
-  const needs = [...a.runtimes.map((r) => (r.detail ? `${r.name} ${r.detail}` : r.name)), ...a.tools, ...a.packageManagers.map((p) => p.name), ...a.services.map((s) => s.name)];
+  const needs = [
+    ...a.runtimes.map((r) => (r.detail ? `${r.name} ${r.detail}` : r.name)),
+    ...a.tools,
+    ...a.packageManagers.map((p) => p.name),
+    ...a.services.map((s) => s.name),
+  ];
   const steps = a.steps[os].slice(0, 6).map((s, i) => {
-    const cmds = s.commands.slice(0, 3).map((c) => (c.length > 120 ? `${c.slice(0, 117)}...` : c));
+    const cmds = s.commands
+      .slice(0, 3)
+      .map((c) => (c.length > 120 ? `${c.slice(0, 117)}...` : c));
     return `${i + 1}. ${s.title}${cmds.length ? `: ${cmds.join(" ; ")}` : ""}`;
   });
   return [
@@ -114,22 +176,39 @@ function askPrompt(result: Result, os: OS, arch: Arch | null): string {
 
 function AskAi({ prompt, os }: { prompt: string; os: OS }) {
   const q = encodeURIComponent(prompt);
+  const { t } = useI18n();
   return (
     <div className="panel ai">
       <div className="panel-head">
         <div>
-          <h3>Still stuck? Ask an AI</h3>
-          <p className="note">Opens a chat with this manual already filled in, for {OS_LABEL[os]}. It uses your own account; gitmanual sends nothing.</p>
+          <h3>{t("stillStuck")}</h3>
+          <p className="note">
+            {t("askAiDesc", { os: OS_LABEL[os] })}
+          </p>
         </div>
       </div>
       <div className="ask-ai">
-        <a className="btn btn-sm btn-go" href={`https://claude.ai/new?q=${q}`} target="_blank" rel="noreferrer">
-          Ask Claude
+        <a
+          className="btn btn-sm btn-go"
+          href={`https://claude.ai/new?q=${q}`}
+          target="_blank"
+          rel="noreferrer"
+        >
+          {t("askClaude")}
         </a>
-        <a className="btn btn-sm" href={`https://chatgpt.com/?q=${q}`} target="_blank" rel="noreferrer">
-          Ask ChatGPT
+        <a
+          className="btn btn-sm"
+          href={`https://chatgpt.com/?q=${q}`}
+          target="_blank"
+          rel="noreferrer"
+        >
+          {t("askChatGpt")}
         </a>
-        <CopyButton text={prompt} className="btn btn-sm" label="Copy the prompt" />
+        <CopyButton
+          text={prompt}
+          className="btn btn-sm"
+          label={t("copyPrompt")}
+        />
       </div>
     </div>
   );
@@ -178,6 +257,7 @@ export function ReportView({
   initialOs?: OS;
   initialMode?: Mode;
 }) {
+  const { t, locale } = useI18n();
   const [result, setResult] = useState<Result | null>(initial);
   const [error, setError] = useState<string | null>(initialError);
   const [line, setLine] = useState(0);
@@ -186,9 +266,12 @@ export function ReportView({
   // Whether this repo and system already has a saved guide, and whether this visitor may write a new one.
   const [guideStatus, setGuideStatus] = useState<GuideStatus | null>(null);
   const [os, setOs] = useState<OS>(initialOs);
+  const [osSynced, setOsSynced] = useState(false);
   const [detectedOs, setDetectedOs] = useState<OS | null>(null);
   const [arch, setArch] = useState<Arch | null>(null);
-  const [mode, setMode] = useState<Mode>(initialMode ?? (initial ? defaultMode(initial) : "source"));
+  const [mode, setMode] = useState<Mode>(
+    initialMode ?? (initial ? defaultMode(initial) : "source"),
+  );
   const [refresh, setRefresh] = useState(0);
   const [status, setStatus] = useState<number | null>(initialStatus);
   // Opened with the visitor's GitHub access: re-reads go the same way, and nothing about it is saved.
@@ -201,13 +284,17 @@ export function ReportView({
     const q = new URLSearchParams(window.location.search);
     const qOs = q.get("os") as OS | null;
     setOs(osPage ?? (qOs && OS_LIST.includes(qOs) ? qOs : d));
+    setOsSynced(true);
     const qMode = q.get("mode");
     if (refresh === 0 && (initial || initialError)) return;
 
     let cancelled = false;
     setResult(null);
     setLine(0);
-    const tick = setInterval(() => setLine((l) => Math.min(l + 1, LOADING_LINES.length - 1)), 900);
+    const tick = setInterval(
+      () => setLine((l) => Math.min(l + 1, LOADING_LINES.length - 1)),
+      900,
+    );
     const url = `${owner}/${repo}${gitRef ? `/tree/${gitRef}` : ""}`;
     (isPrivate
       ? fetchPrivate(url)
@@ -225,9 +312,14 @@ export function ReportView({
         }
         if (cancelled) return;
         setResult(data);
-        setMode(qMode === "install" || qMode === "source" ? qMode : defaultMode(data));
+        setMode(
+          qMode === "install" || qMode === "source" ? qMode : defaultMode(data),
+        );
       })
-      .catch((e) => !cancelled && setError(e instanceof Error ? e.message : String(e)))
+      .catch(
+        (e) =>
+          !cancelled && setError(e instanceof Error ? e.message : String(e)),
+      )
       .finally(() => clearInterval(tick));
     return () => {
       cancelled = true;
@@ -243,7 +335,9 @@ export function ReportView({
     setGuideStatus(null);
     if (!aiGuide || !result || result.meta.private) return;
     const url = `${result.meta.fullName}${gitRef ? `/tree/${gitRef}` : ""}`;
-    fetch(`/api/guide?${new URLSearchParams({ url, os })}`, { cache: "no-store" })
+    fetch(`/api/guide?${new URLSearchParams({ url, os })}`, {
+      cache: "no-store",
+    })
       .then((r) => (r.ok ? r.json() : null))
       .then((s: GuideStatus | null) => setGuideStatus(s))
       .catch(() => {});
@@ -251,16 +345,22 @@ export function ReportView({
 
   // Keep the chosen OS and tab in the URL so a setup can be shared or bookmarked.
   useEffect(() => {
-    if (!result) return;
+    if (!result || !osSynced) return;
     const params = new URLSearchParams(window.location.search);
     params.set("mode", mode);
     // On a per-system page the system is in the path, so switching moves to that system's page.
     if (osPage) params.delete("os");
     else params.set("os", os);
-    const path = osPage ? `/${result.meta.fullName}/${OS_SLUG[os]}` : window.location.pathname;
+    const path = osPage
+      ? `/${result.meta.fullName}/${OS_SLUG[os]}`
+      : window.location.pathname;
     // The hash stays: #ask and #pdf open the chat and the PDF dialog when the page arrives with them.
-    window.history.replaceState(null, "", `${path}?${params}${window.location.hash}`);
-  }, [result, os, mode, osPage]);
+    window.history.replaceState(
+      null,
+      "",
+      `${path}?${params}${window.location.hash}`,
+    );
+  }, [result, os, mode, osPage, osSynced]);
 
   async function generateGuide() {
     if (!result) return;
@@ -270,11 +370,22 @@ export function ReportView({
       const res = await fetch("/api/guide", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: `${result.meta.fullName}${gitRef ? `/tree/${gitRef}` : ""}`, os }),
+        body: JSON.stringify({
+          url: `${result.meta.fullName}${gitRef ? `/tree/${gitRef}` : ""}`,
+          os,
+        }),
       });
       if (!res.body) throw new Error("No response body");
       // A new guide was written (not a saved one): one fewer left today.
-      if (!res.headers.get("X-Guide-Cached") && res.ok) setGuideStatus((g) => g && { ...g, saved: true, left: g.left === null ? null : Math.max(0, g.left - 1) });
+      if (!res.headers.get("X-Guide-Cached") && res.ok)
+        setGuideStatus(
+          (g) =>
+            g && {
+              ...g,
+              saved: true,
+              left: g.left === null ? null : Math.max(0, g.left - 1),
+            },
+        );
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       for (;;) {
@@ -283,7 +394,10 @@ export function ReportView({
         setGuide((g) => g + decoder.decode(value, { stream: true }));
       }
     } catch (e) {
-      setGuide((g) => `${g}\n\n**Error:** ${e instanceof Error ? e.message : String(e)}`);
+      setGuide(
+        (g) =>
+          `${g}\n\n**Error:** ${e instanceof Error ? e.message : String(e)}`,
+      );
     } finally {
       setGuideLoading(false);
     }
@@ -301,7 +415,9 @@ export function ReportView({
           setError(null);
           setResult(r);
           const qMode = new URLSearchParams(window.location.search).get("mode");
-          setMode(qMode === "install" || qMode === "source" ? qMode : defaultMode(r));
+          setMode(
+            qMode === "install" || qMode === "source" ? qMode : defaultMode(r),
+          );
         }}
       />
     );
@@ -311,7 +427,9 @@ export function ReportView({
     return (
       <div className="wrap report-state">
         <p className="eyebrow">Missing parts</p>
-        <h1 className="display-md">We couldn&apos;t open {owner}/{repo}</h1>
+        <h1 className="display-md">
+          We couldn&apos;t open {owner}/{repo}
+        </h1>
         <p className="lead">{error}</p>
         <RepoForm initial={`${owner}/${repo}`} size="sm" />
       </div>
@@ -414,51 +532,100 @@ function Report({
   onDisconnect: () => void;
   onVotes: (v: Votes) => void;
 }) {
+  const { t, locale } = useI18n();
   const { meta, analysis: a, install, guides, files } = result;
+  const readme = Object.entries(files).find(([p]) => /^readme(\.\w+)?$/i.test(p))?.[1];
+  const showcaseItems = useMemo(
+    () => extractShowcase(readme, meta.htmlUrl, meta.branch),
+    [readme, meta.htmlUrl, meta.branch],
+  );
   // Private manuals are for the visitor alone: no votes, sharing, badge or saved AI guide, and the script is made here.
   const priv = Boolean(meta.private);
   const steps = a.steps[os];
   const myArch = os === detectedOs ? arch : null;
   const fit = fitCheck(a, install, os, myArch, meta.archived);
   // "More like this" leaves out what the alternatives box above already shows.
-  const altsShown = fit.status !== "yes" ? (alternatives[os] ?? []).map((r) => r.fullName) : [];
-  const moreLike = (related[os] ?? []).filter((r) => !altsShown.includes(r.fullName));
+  const altsShown =
+    fit.status !== "yes" ? (alternatives[os] ?? []).map((r) => r.fullName) : [];
+  const moreLike = (related[os] ?? []).filter(
+    (r) => !altsShown.includes(r.fullName),
+  );
   // The route diagram ("How it fits together", app/flow.tsx) is off the page for now: it made the page heavier
   // than the three answers people come for. Its Mermaid still goes out with the API, Markdown and MCP.
   // const flow = setupFlow(a, install, os);
   const fresh = freshness(meta.pushedAt);
   const level = { Easy: 1, Moderate: 2, Involved: 3 }[a.difficulty.label];
-  const setup = buildScript(steps, os, meta.fullName, process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000");
+  const setup = buildScript(
+    steps,
+    os,
+    meta.fullName,
+    process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3035",
+  );
   const setupFile = `/${meta.fullName}/setup/${os === "windows" ? "windows.ps1" : `${os}.sh`}`;
   const md = (text: string) => (
-    <ReactMarkdown components={blocks} urlTransform={(url, key) => repoUrl(url, key, meta.htmlUrl, meta.branch)}>
+    <ReactMarkdown
+      components={blocks}
+      urlTransform={(url, key) => repoUrl(url, key, meta.htmlUrl, meta.branch)}
+    >
       {text}
     </ReactMarkdown>
   );
 
   const parts = [
-    ...(a.needsDevice ? [{ name: "Your device", detail: undefined, kind: "phone, tablet or TV with ADB" }] : []),
-    ...a.runtimes.map((r) => ({ name: r.name, detail: r.detail, kind: "runtime" })),
+    ...(a.needsDevice
+      ? [
+          {
+            name: "Your device",
+            detail: undefined,
+            kind: "phone, tablet or TV with ADB",
+          },
+        ]
+      : []),
+    ...a.runtimes.map((r) => ({
+      name: r.name,
+      detail: r.detail,
+      kind: "runtime",
+    })),
     ...a.tools.map((t) => ({ name: t, detail: undefined, kind: "tool" })),
-    ...a.packageManagers.map((p) => ({ name: p.name, detail: p.detail, kind: "package manager" })),
-    ...a.services.map((s) => ({ name: s.name, detail: undefined, kind: "service" })),
+    ...a.packageManagers.map((p) => ({
+      name: p.name,
+      detail: p.detail,
+      kind: "package manager",
+    })),
+    ...a.services.map((s) => ({
+      name: s.name,
+      detail: undefined,
+      kind: "service",
+    })),
   ];
 
   return (
     <div className="wrap report">
       <header className="sheet-head">
         <div>
-          <p className="eyebrow">{osPage ? `How to install on ${OS_LABEL[os]}` : "Assembly instructions"}</p>
-          <h1 className="display-md repo-title" translate="no">
-            <a href={meta.htmlUrl} target="_blank" rel="noreferrer">
-              <span className="owner">{meta.fullName.split("/")[0]}/</span>
-              <wbr />
-              {meta.fullName.split("/")[1]}
-            </a>
-          </h1>
+          <div className="sheet-eyebrow-row">
+            <p className="eyebrow">
+              {osPage
+                ? `How to install on ${OS_LABEL[os]}`
+                : "Assembly instructions"}
+            </p>
+          </div>
+          <div className="repo-title-row">
+            <h1 className="display-md repo-title" translate="no">
+              <a href={meta.htmlUrl} target="_blank" rel="noreferrer">
+                <span className="owner">{meta.fullName.split("/")[0]}/</span>
+                <wbr />
+                {meta.fullName.split("/")[1]}
+              </a>
+            </h1>
+            <SaveToShelfButton fullName={meta.fullName} />
+          </div>
           {meta.description && <p className="lead">{meta.description}</p>}
           <div className="chips">
-            {(a.stacks.length ? a.stacks : [meta.language ?? "Unknown stack"]).map((s) => (
+            {(a.stacks.length
+              ? a.stacks
+              : [meta.language ?? "Unknown stack"]
+            ).map((s) => (
               <span className="chip" key={s}>
                 {s}
               </span>
@@ -499,7 +666,8 @@ function Report({
               <div>
                 <dt>Got it running</dt>
                 <dd className="num">
-                  {result.votes.worked} {result.votes.worked === 1 ? "person" : "people"}
+                  {result.votes.worked}{" "}
+                  {result.votes.worked === 1 ? "person" : "people"}
                 </dd>
               </div>
             )}
@@ -510,25 +678,31 @@ function Report({
 
       {priv ? (
         <p className="stamp-line private-line">
-          <span className="private-tag">Private</span> Built just for you {timeAgo(result.analyzedAt)}, and not saved anywhere. Cloning it
-          needs your own GitHub sign-in on this computer (<code>gh auth login</code> or an SSH key).
+          <span className="private-tag">Private</span> Built just for you{" "}
+          {timeAgo(result.analyzedAt)}, and not saved anywhere. Cloning it needs
+          your own GitHub sign-in on this computer (<code>gh auth login</code>{" "}
+          or an SSH key).
           <button className="link" onClick={onRefresh}>
-            Re-read the repo
+            {t("reRead")}
           </button>
           <button className="link" onClick={onDisconnect}>
             Disconnect
           </button>
         </p>
       ) : (
-      <p className="stamp-line">
-        {result.stale ? "GitHub didn't answer, so this is the saved copy from " : result.cached ? "Saved setup from " : "Fresh setup, read "}
-        {timeAgo(result.analyzedAt)}
-        {result.cached && (
-          <button className="link" onClick={onRefresh}>
-            Re-read the repo
-          </button>
-        )}
-      </p>
+        <p className="stamp-line">
+          {result.stale
+            ? "GitHub didn't answer, so this is the saved copy from "
+            : result.cached
+              ? "Saved setup from "
+              : "Fresh setup, read "}
+          {timeAgo(result.analyzedAt)}
+          {result.cached && (
+            <button className="link" onClick={onRefresh}>
+              {t("reRead")}
+            </button>
+          )}
+        </p>
       )}
 
       <section className={`fit fit-${fit.status}`} aria-labelledby="fit-h">
@@ -536,7 +710,7 @@ function Report({
           {fit.status === "yes" ? "✓" : fit.status === "maybe" ? "?" : "✕"}
         </div>
         <div className="fit-body">
-          <p className="eyebrow">Will it work on {OS_LABEL[os]}?</p>
+          <p className="eyebrow">{t("willItWorkOn", { os: OS_LABEL[os] })}</p>
           <h2 id="fit-h">{fit.headline}</h2>
           <ul>
             {fit.reasons.map((r) => (
@@ -547,13 +721,15 @@ function Report({
           </ul>
           {a.compatibility && (
             <details className="fit-list">
-              <summary>Supported devices from the README: {a.compatibility.heading}</summary>
+              <summary>
+                Supported devices from the README: {a.compatibility.heading}
+              </summary>
               <div className="prose">{md(a.compatibility.markdown)}</div>
             </details>
           )}
         </div>
         <div className="fit-device">
-          <span className="eyebrow">Your system</span>
+          <span className="eyebrow">{locale === "th" ? "ระบบของคุณ" : "Your system"}</span>
           <div className="seg" role="radiogroup" aria-label="Operating system">
             {OS_LIST.map((o) => (
               // Real links, so search engines find each system's page; clicking just switches in place.
@@ -569,22 +745,28 @@ function Report({
                 }}
               >
                 {OS_LABEL[o]}
-                {o === detectedOs && <span className="you">you</span>}
+                {o === detectedOs && <span className="you">{locale === "th" ? "เครื่องคุณ" : "you"}</span>}
               </a>
             ))}
           </div>
-          {myArch && <span className="note">Your chip: {archLabel(myArch, os)}</span>}
+          {myArch && (
+            <span className="note">Your chip: {archLabel(myArch, os)}</span>
+          )}
         </div>
       </section>
 
       {fit.status !== "yes" && (alternatives[os]?.length ?? 0) > 0 && (
         <aside className="alts" aria-labelledby="alts-h">
           <h3 id="alts-h">
-            {fit.status === "no" ? `Doesn't run on ${OS_LABEL[os]}? These similar projects do.` : `Prefer one that's sure to run on ${OS_LABEL[os]}? These similar projects do.`}
+            {fit.status === "no"
+              ? `Doesn't run on ${OS_LABEL[os]}? These similar projects do.`
+              : `Prefer one that's sure to run on ${OS_LABEL[os]}? These similar projects do.`}
           </h3>
           <AltCards list={alternatives[os]!} os={os} />
         </aside>
       )}
+
+      <ShowcaseSection items={showcaseItems} />
 
       <StartHere
         meta={meta}
@@ -595,19 +777,40 @@ function Report({
         analysis={a}
         onGo={(id, m) => {
           if (m) onMode(m);
-          requestAnimationFrame(() => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" }));
+          requestAnimationFrame(() =>
+            document
+              .getElementById(id)
+              ?.scrollIntoView({ behavior: "smooth", block: "start" }),
+          );
         }}
       />
       {/* <FlowMap flow={flow} onJump={...} /> — the route diagram, see the note on `flow` above. */}
 
       <div className="sheet">
         <div className="sheet-main">
-          <div className="tabs" role="tablist" aria-label="How to set it up" id="main-tabs">
-            <button role="tab" aria-selected={mode === "install"} className={mode === "install" ? "on" : ""} onClick={() => onMode("install")}>
+          <div
+            className="tabs"
+            role="tablist"
+            aria-label="How to set it up"
+            id="main-tabs"
+          >
+            <button
+              role="tab"
+              aria-selected={mode === "install"}
+              className={mode === "install" ? "on" : ""}
+              onClick={() => onMode("install")}
+            >
               Install it
-              {install.platforms.length > 0 && <span className="count">{install.platforms.length}</span>}
+              {install.platforms.length > 0 && (
+                <span className="count">{install.platforms.length}</span>
+              )}
             </button>
-            <button role="tab" aria-selected={mode === "source"} className={mode === "source" ? "on" : ""} onClick={() => onMode("source")}>
+            <button
+              role="tab"
+              aria-selected={mode === "source"}
+              className={mode === "source" ? "on" : ""}
+              onClick={() => onMode("source")}
+            >
               Build from source
               <span className="count">{steps.length}</span>
             </button>
@@ -626,7 +829,11 @@ function Report({
             <>
               <RepoScript meta={meta} guides={guides} os={os} />
               {guides.doc && (
-                <details className="panel guide-doc" id="maintainer-guide" open={steps.length <= 3}>
+                <details
+                  className="panel guide-doc"
+                  id="maintainer-guide"
+                  open={steps.length <= 3}
+                >
                   <summary>
                     <span className="eyebrow">From the maintainers</span>
                     <h3>
@@ -634,7 +841,12 @@ function Report({
                     </h3>
                   </summary>
                   <div className="prose">{md(guides.doc.markdown)}</div>
-                  <a className="release" href={`${meta.htmlUrl}/blob/${meta.branch}/${guides.doc.path}`} target="_blank" rel="noreferrer">
+                  <a
+                    className="release"
+                    href={`${meta.htmlUrl}/blob/${meta.branch}/${guides.doc.path}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
                     Open {guides.doc.path} on GitHub ↗
                   </a>
                 </details>
@@ -647,18 +859,36 @@ function Report({
               )}
               <div className="steps-head" id="our-steps">
                 <h2>
-                  {steps.length} steps on {OS_LABEL[os]}
+                  {steps.length} {t("steps")} ({OS_LABEL[os]})
                 </h2>
                 {setup.steps.length > 1 && (
                   <div className="setup-btns">
-                    <CopyButton text={setup.text} className="btn btn-sm" label="Copy as one script" />
+                    <CopyButton
+                      text={setup.text}
+                      className="btn btn-sm"
+                      label={locale === "th" ? "คัดลอกเป็นสคริปต์เดียว" : "Copy as one script"}
+                    />
                     {priv ? (
-                      <button className="btn btn-sm" onClick={() => saveText(setup.filename, os === "windows" ? `\uFEFF${setup.text}` : setup.text)}>
-                        Download {setup.filename}
+                      <button
+                        className="btn btn-sm"
+                        onClick={() =>
+                          saveText(
+                            setup.filename,
+                            os === "windows"
+                              ? `\uFEFF${setup.text}`
+                              : setup.text,
+                          )
+                        }
+                      >
+                        {t("downloadScript")} ({setup.filename})
                       </button>
                     ) : (
-                      <a className="btn btn-sm" href={`${setupFile}?download=1`} download>
-                        Download {setup.filename}
+                      <a
+                        className="btn btn-sm"
+                        href={`${setupFile}?download=1`}
+                        download
+                      >
+                        {t("downloadScript")} ({setup.filename})
                       </a>
                     )}
                   </div>
@@ -666,8 +896,15 @@ function Report({
               </div>
               {setup.steps.length > 1 && (
                 <p className="setup-how">
-                  Then run <code>{os === "windows" ? "powershell -ExecutionPolicy Bypass -File .\\setup.ps1" : "bash setup.sh"}</code>. It stops at
-                  the first error and is safe to run again. Servers and tests aren&apos;t started; it lists them at the end.
+                  Then run{" "}
+                  <code>
+                    {os === "windows"
+                      ? "powershell -ExecutionPolicy Bypass -File .\\setup.ps1"
+                      : "bash setup.sh"}
+                  </code>
+                  . It stops at the first error and is safe to run again.
+                  Servers and tests aren&apos;t started; it lists them at the
+                  end.
                   {!priv && (
                     <>
                       {" "}
@@ -689,10 +926,14 @@ function Report({
                       <h3>{s.title}</h3>
                       {s.note && (
                         <p className="note">
-                          <ReactMarkdown components={inline}>{s.note}</ReactMarkdown>
+                          <ReactMarkdown components={inline}>
+                            {s.note}
+                          </ReactMarkdown>
                         </p>
                       )}
-                      {s.commands.length > 0 && <CodeBlock text={s.commands.join("\n")} />}
+                      {s.commands.length > 0 && (
+                        <CodeBlock text={s.commands.join("\n")} />
+                      )}
                       {s.tips?.map((t) => (
                         <div className="tip" key={t}>
                           <ReactMarkdown components={inline}>{t}</ReactMarkdown>
@@ -710,7 +951,9 @@ function Report({
               {steps.length <= 1 && (
                 <p className="empty">
                   We couldn&apos;t spot a known stack.{" "}
-                  {aiGuide && !priv ? "The AI guide below can read the code for you." : "Start with the README, or ask an AI below to go through it with you."}
+                  {aiGuide && !priv
+                    ? "The AI guide below can read the code for you."
+                    : "Start with the README, or ask an AI below to go through it with you."}
                 </p>
               )}
               {!a.readmeFirst && a.readme && (
@@ -724,7 +967,14 @@ function Report({
             </>
           )}
 
-          {!priv && <DidItWork repo={meta.fullName} os={os} votes={result.votes} onVotes={onVotes} />}
+          {!priv && (
+            <DidItWork
+              repo={meta.fullName}
+              os={os}
+              votes={result.votes}
+              onVotes={onVotes}
+            />
+          )}
 
           {chat && !priv && <Chat repo={meta.fullName} os={os} />}
 
@@ -734,10 +984,18 @@ function Report({
                 <div>
                   <h3>Still stuck? Get a written guide</h3>
                   <p className="note">
-                    GitManual AI Agent reads the {Object.keys(files).length} key files and writes a step-by-step guide for {OS_LABEL[os]}. Once written, it&apos;s saved for everyone.
+                    GitManual AI Agent reads the {Object.keys(files).length} key
+                    files and writes a step-by-step guide for {OS_LABEL[os]}.
+                    Once written, it&apos;s saved for everyone.
                   </p>
                 </div>
-                <GuideButton status={guideStatus} loading={guideLoading} written={Boolean(guide)} onGuide={onGuide} page={`/${meta.fullName}/${OS_SLUG[os]}`} />
+                <GuideButton
+                  status={guideStatus}
+                  loading={guideLoading}
+                  written={Boolean(guide)}
+                  onGuide={onGuide}
+                  page={`/${meta.fullName}/${OS_SLUG[os]}`}
+                />
               </div>
               {guideStatus && !guideStatus.saved && !guide && (
                 <p className="note guide-allowance">
@@ -753,16 +1011,18 @@ function Report({
               {guide && <div className="prose">{md(guide)}</div>}
             </div>
           )}
-          {(!aiGuide || priv) && <AskAi prompt={askPrompt(result, os, myArch)} os={os} />}
+          {(!aiGuide || priv) && (
+            <AskAi prompt={askPrompt(result, os, myArch)} os={os} />
+          )}
 
           <Related list={moreLike} name={meta.fullName.split("/")[1]} os={os} />
         </div>
 
         <aside className="sheet-side">
           <div className="parts" id="parts">
-            <h2 className="parts-h">Parts list</h2>
+            <h2 className="parts-h">{t("partsList")}</h2>
             {parts.length === 0 ? (
-              <p className="empty">Nothing extra to install.</p>
+              <p className="empty">{locale === "th" ? "ไม่ต้องติดตั้งอะไรเพิ่มเติม" : "Nothing extra to install."}</p>
             ) : (
               <ul>
                 {parts.map((p) => (
@@ -779,7 +1039,8 @@ function Report({
             {a.envVars.length > 0 && (
               <details className="env">
                 <summary>
-                  <span className="qty">{a.envVars.length}×</span> settings in <code>.env</code>
+                  <span className="qty">{a.envVars.length}×</span> settings in{" "}
+                  <code>.env</code>
                 </summary>
                 <ul>
                   {a.envVars.slice(0, 60).map((e) => (
@@ -798,8 +1059,20 @@ function Report({
             <div className="side-card">
               <h3>Share this manual</h3>
               <div className="share-btns">
-                <CopyButton text={typeof window === "undefined" ? `/${meta.fullName}` : `${window.location.origin}/${meta.fullName}`} className="btn btn-sm" label="Copy the link" />
-                <a className="btn btn-sm" href={`/${meta.fullName}/poster?download=1`} download>
+                <CopyButton
+                  text={
+                    typeof window === "undefined"
+                      ? `/${meta.fullName}`
+                      : `${window.location.origin}/${meta.fullName}`
+                  }
+                  className="btn btn-sm"
+                  label="Copy the link"
+                />
+                <a
+                  className="btn btn-sm"
+                  href={`/${meta.fullName}/poster?download=1`}
+                  download
+                >
                   Download a 1080×1080 poster
                 </a>
               </div>
@@ -807,12 +1080,31 @@ function Report({
                 <div className="side-sub">
                   <h4>Featured in {curator}</h4>
                   {picks.slice(0, 2).map((p) => (
-                    <a className="featured" key={p.url} href={p.url} target="_blank" rel="noreferrer">
+                    <a
+                      className="featured"
+                      key={p.url}
+                      href={p.url}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
                       {/* eslint-disable-next-line @next/next/no-img-element -- small thumbnail of an already-sized poster */}
-                      <img src={p.image} alt="" width={76} height={76} loading="lazy" />
+                      <img
+                        src={p.image}
+                        alt=""
+                        width={76}
+                        height={76}
+                        loading="lazy"
+                      />
                       <span>
-                        <b>{p.kind === "reel" ? "▶ Watch the Reel" : "See the poster"} ↗</b>
-                        {p.caption ? p.caption.split(/\r?\n/)[0].slice(0, 90) : "On Facebook"}
+                        <b>
+                          {p.kind === "reel"
+                            ? "▶ Watch the Reel"
+                            : "See the poster"}{" "}
+                          ↗
+                        </b>
+                        {p.caption
+                          ? p.caption.split(/\r?\n/)[0].slice(0, 90)
+                          : "On Facebook"}
                       </span>
                     </a>
                   ))}
@@ -833,8 +1125,11 @@ function Report({
                 ))}
                 {a.otherManifests.length > 0 && (
                   <li>
-                    Nested projects: <code>{a.otherManifests.slice(0, 4).join(", ")}</code>
-                    {a.otherManifests.length > 4 ? ` and ${a.otherManifests.length - 4} more` : ""}
+                    Nested projects:{" "}
+                    <code>{a.otherManifests.slice(0, 4).join(", ")}</code>
+                    {a.otherManifests.length > 4
+                      ? ` and ${a.otherManifests.length - 4} more`
+                      : ""}
                   </li>
                 )}
               </ul>
@@ -848,7 +1143,11 @@ function Report({
             <dl className="side-facts">
               <div>
                 <dt>License</dt>
-                <dd>{meta.license && meta.license !== "NOASSERTION" ? meta.license : "Not detected"}</dd>
+                <dd>
+                  {meta.license && meta.license !== "NOASSERTION"
+                    ? meta.license
+                    : "Not detected"}
+                </dd>
               </div>
               <div>
                 <dt>Open issues</dt>
@@ -915,20 +1214,36 @@ function InstallPanel({
   const recommended = assets.find((a) => a.recommended);
   const others = assets.filter((a) => a !== recommended);
   const commands = install.commands.filter((c) => c.os.includes(os));
-  const choices = installChoices(commands, { name: repoName }, python, { download: Boolean(recommended), addons });
+  const choices = installChoices(commands, { name: repoName }, python, {
+    download: Boolean(recommended),
+    addons,
+  });
   const folder = venvFolder(repoName);
-  const otherOs = OS_LIST.filter((o) => o !== os && install.platforms.includes(o));
+  const otherOs = OS_LIST.filter(
+    (o) => o !== os && install.platforms.includes(o),
+  );
   // Apps the project publishes on its own site rather than in GitHub releases.
-  const page = !assets.length && install.downloadPage?.platforms.includes(os) ? install.downloadPage : null;
+  const page =
+    !assets.length && install.downloadPage?.platforms.includes(os)
+      ? install.downloadPage
+      : null;
   const pageCard = page && (
     <div className="panel">
       <div className="panel-head">
         <h3>Download for {OS_LABEL[os]}</h3>
-        <a className="btn btn-sm btn-go" href={page.urls[os]} target="_blank" rel="noreferrer">
+        <a
+          className="btn btn-sm btn-go"
+          href={page.urls[os]}
+          target="_blank"
+          rel="noreferrer"
+        >
           Open {page.host} ↗
         </a>
       </div>
-      <p className="note">The project publishes its {OS_LABEL[os]} app on its own website, not in GitHub releases. The README links to this page.</p>
+      <p className="note">
+        The project publishes its {OS_LABEL[os]} app on its own website, not in
+        GitHub releases. The README links to this page.
+      </p>
     </div>
   );
 
@@ -937,12 +1252,19 @@ function InstallPanel({
     <div className="panel">
       <div className="panel-head">
         <h3>Install on your Android / TV device</h3>
-        <a className="release" href={release.url} target="_blank" rel="noreferrer">
-          {release.name} · {new Date(release.publishedAt).toLocaleDateString()} ↗
+        <a
+          className="release"
+          href={release.url}
+          target="_blank"
+          rel="noreferrer"
+        >
+          {release.name} · {new Date(release.publishedAt).toLocaleDateString()}{" "}
+          ↗
         </a>
       </div>
       <p className="note">
-        This app runs on the device, not on your {OS_LABEL[os]} computer. Download it, then install it from the computer with adb (turn on ADB
+        This app runs on the device, not on your {OS_LABEL[os]} computer.
+        Download it, then install it from the computer with adb (turn on ADB
         debugging in the device&apos;s Developer Options first).
       </p>
       {devices.map((d) => (
@@ -952,7 +1274,9 @@ function InstallPanel({
               <div className="asset-name">{d.name}</div>
               <div className="note">
                 Android app · {formatSize(d.size)}
-                {d.downloads ? ` · ${d.downloads.toLocaleString()} downloads` : ""}
+                {d.downloads
+                  ? ` · ${d.downloads.toLocaleString()} downloads`
+                  : ""}
               </div>
             </div>
             <a className="btn btn-go btn-sm" href={d.url}>
@@ -975,7 +1299,13 @@ function InstallPanel({
             {deviceCard
               ? `Your ${OS_LABEL[os]} computer only needs the tools from the source setup.`
               : `No ready-made ${OS_LABEL[os]} app or install command${release ? ` in ${release.tag}` : " (no GitHub releases)"}.`}
-            {otherOs.length > 0 && <> There are apps for {otherOs.map((o) => OS_LABEL[o]).join(" and ")}.</>}
+            {otherOs.length > 0 && (
+              <>
+                {" "}
+                There are apps for{" "}
+                {otherOs.map((o) => OS_LABEL[o]).join(" and ")}.
+              </>
+            )}
           </p>
           <button className="btn btn-sm" onClick={onSource}>
             Build it from source instead →
@@ -993,9 +1323,15 @@ function InstallPanel({
         <div className="panel">
           <div className="panel-head">
             <h3>Download for {OS_LABEL[os]}</h3>
-            <a className="release" href={release.url} target="_blank" rel="noreferrer">
+            <a
+              className="release"
+              href={release.url}
+              target="_blank"
+              rel="noreferrer"
+            >
               {release.name}
-              {release.prerelease ? " (pre-release)" : ""} · {new Date(release.publishedAt).toLocaleDateString()} ↗
+              {release.prerelease ? " (pre-release)" : ""} ·{" "}
+              {new Date(release.publishedAt).toLocaleDateString()} ↗
             </a>
           </div>
           <AssetRow asset={recommended} os={os} primary />
@@ -1023,13 +1359,19 @@ function InstallPanel({
             <h3>{g.title}</h3>
             {g.note && <p className="note">{g.note}</p>}
             {list.filter((c) => c.role !== "library").length > 1 && (
-              <p className="note">Choose one way. Most people should use the recommended one; the rest are other options.</p>
+              <p className="note">
+                Choose one way. Most people should use the recommended one; the
+                rest are other options.
+              </p>
             )}
             {venv && (
               <div className="pm-cmd">
-                <span className="method method-step">First: a virtual environment</span>
+                <span className="method method-step">
+                  First: a virtual environment
+                </span>
                 <p className="note">
-                  Python&apos;s own advice: install into a fresh environment, in its own folder (<code>~/{folder}</code>), so it can&apos;t
+                  Python&apos;s own advice: install into a fresh environment, in
+                  its own folder (<code>~/{folder}</code>), so it can&apos;t
                   clash with other tools.
                 </p>
                 <CodeBlock text={withVenv("", os, folder).replace(/\n$/, "")} />
@@ -1037,8 +1379,14 @@ function InstallPanel({
             )}
             {list.map((c) => (
               <div className="pm-cmd" key={c.command}>
-                <span className={`method method-${c.role}`}>{list.length > 1 || c.role !== "recommended" ? c.label : c.method}</span>
-                {c.needs.length > 0 && <span className="pm-needs">Needs {c.needs.join(", ")}</span>}
+                <span className={`method method-${c.role}`}>
+                  {list.length > 1 || c.role !== "recommended"
+                    ? c.label
+                    : c.method}
+                </span>
+                {c.needs.length > 0 && (
+                  <span className="pm-needs">Needs {c.needs.join(", ")}</span>
+                )}
                 {c.note && (
                   <p className="note">
                     {c.note}
@@ -1053,10 +1401,17 @@ function InstallPanel({
                   </p>
                 )}
                 <CodeBlock text={c.command} />
-                {c.script && <div className="warn">Pipes a remote script into your shell. Read it before running.</div>}
+                {c.script && (
+                  <div className="warn">
+                    Pipes a remote script into your shell. Read it before
+                    running.
+                  </div>
+                )}
               </div>
             ))}
-            <p className="note">From the README, exactly as the maintainers wrote it.</p>
+            <p className="note">
+              From the README, exactly as the maintainers wrote it.
+            </p>
           </div>
         );
       })}
@@ -1066,9 +1421,21 @@ function InstallPanel({
 
 const COMMAND_GROUPS: { kind: InstallKind; title: string; note?: string }[] = [
   { kind: "app", title: "Install with a package manager" },
-  { kind: "docker", title: "Run it with Docker", note: "A self-hosted app: Docker runs it on your computer and you open it in the browser. Needs Docker Desktop (or Docker Engine on Linux). Run docker compose commands inside the cloned repo folder." },
-  { kind: "scaffold", title: "Start a new project with it", note: "Creates a fresh project folder set up with this framework. Run it where you keep your code, not inside this repo." },
-  { kind: "library", title: "Use it in your own project", note: "This is a library: you add it to your code rather than opening an app." },
+  {
+    kind: "docker",
+    title: "Run it with Docker",
+    note: "A self-hosted app: Docker runs it on your computer and you open it in the browser. Needs Docker Desktop (or Docker Engine on Linux). Run docker compose commands inside the cloned repo folder.",
+  },
+  {
+    kind: "scaffold",
+    title: "Start a new project with it",
+    note: "Creates a fresh project folder set up with this framework. Run it where you keep your code, not inside this repo.",
+  },
+  {
+    kind: "library",
+    title: "Use it in your own project",
+    note: "This is a library: you add it to your code rather than opening an app.",
+  },
 ];
 
 type InstallWay = { tag: string; title: string; sub: string };
@@ -1078,21 +1445,64 @@ function installWay(install: InstallOptions, os: OS): InstallWay | null {
   const label = OS_LABEL[os];
   const cmds = install.commands.filter((c) => c.os.includes(os));
   const app = cmds.find((c) => c.kind === "app");
-  if (install.release?.assets.some((a) => a.os === os)) return { tag: "Download", title: "Get the ready-made app", sub: `Built for ${label}. No code needed.` };
+  if (install.release?.assets.some((a) => a.os === os))
+    return {
+      tag: "Download",
+      title: "Get the ready-made app",
+      sub: `Built for ${label}. No code needed.`,
+    };
   if (install.downloadPage?.platforms.includes(os))
-    return { tag: "Download", title: "Get the ready-made app", sub: `From ${install.downloadPage.host}, for ${label}. No code needed.` };
-  if (app) return { tag: "Install", title: /script/i.test(app.method) ? "Run the install script" : `Install it with ${app.method}`, sub: `One command on ${label}.` };
+    return {
+      tag: "Download",
+      title: "Get the ready-made app",
+      sub: `From ${install.downloadPage.host}, for ${label}. No code needed.`,
+    };
+  if (app)
+    return {
+      tag: "Install",
+      title: /script/i.test(app.method)
+        ? "Run the install script"
+        : `Install it with ${app.method}`,
+      sub: `One command on ${label}.`,
+    };
   if (install.release?.deviceAssets.length)
-    return { tag: "Device app", title: "Install it on your device", sub: "An Android / TV app (.apk), installed from this computer." };
-  if (cmds.some((c) => c.kind === "docker")) return { tag: "Docker", title: "Run it with Docker", sub: "Self-hosted: it opens in your browser." };
+    return {
+      tag: "Device app",
+      title: "Install it on your device",
+      sub: "An Android / TV app (.apk), installed from this computer.",
+    };
+  if (cmds.some((c) => c.kind === "docker"))
+    return {
+      tag: "Docker",
+      title: "Run it with Docker",
+      sub: "Self-hosted: it opens in your browser.",
+    };
   const scaffold = cmds.find((c) => c.kind === "scaffold");
-  if (scaffold) return { tag: "New project", title: "Start a project with it", sub: scaffold.command };
+  if (scaffold)
+    return {
+      tag: "New project",
+      title: "Start a project with it",
+      sub: scaffold.command,
+    };
   const lib = cmds.find((c) => c.kind === "library");
-  if (lib) return { tag: "Library", title: "Add it to your project", sub: lib.command };
+  if (lib)
+    return {
+      tag: "Library",
+      title: "Add it to your project",
+      sub: lib.command,
+    };
   return null;
 }
 
-function AssetRow({ asset, os, primary }: { asset: Asset; os: OS; primary?: boolean }) {
+function AssetRow({
+  asset,
+  os,
+  primary,
+}: {
+  asset: Asset;
+  os: OS;
+  primary?: boolean;
+}) {
   const arch = archLabel(asset.arch, os);
   return (
     <div className={`asset${primary ? " primary" : ""}`}>
@@ -1102,7 +1512,9 @@ function AssetRow({ asset, os, primary }: { asset: Asset; os: OS; primary?: bool
           <div className="note">
             {asset.kind}
             {arch ? ` · ${arch}` : ""} · {formatSize(asset.size)}
-            {asset.downloads ? ` · ${asset.downloads.toLocaleString()} downloads` : ""}
+            {asset.downloads
+              ? ` · ${asset.downloads.toLocaleString()} downloads`
+              : ""}
             {primary ? " · best match" : ""}
           </div>
         </div>
@@ -1117,9 +1529,27 @@ function AssetRow({ asset, os, primary }: { asset: Asset; os: OS; primary?: bool
 }
 
 // "Write my guide" (app/api/guide): reading a saved guide is free; writing a new one needs sign-in and an allowance.
-type GuideStatus = { saved: boolean; signedIn: boolean; pro: boolean; left: number | null; proOffer: boolean };
+type GuideStatus = {
+  saved: boolean;
+  signedIn: boolean;
+  pro: boolean;
+  left: number | null;
+  proOffer: boolean;
+};
 
-function GuideButton({ status, loading, written, onGuide, page }: { status: GuideStatus | null; loading: boolean; written: boolean; onGuide: () => void; page: string }) {
+function GuideButton({
+  status,
+  loading,
+  written,
+  onGuide,
+  page,
+}: {
+  status: GuideStatus | null;
+  loading: boolean;
+  written: boolean;
+  onGuide: () => void;
+  page: string;
+}) {
   if (loading)
     return (
       <button className="btn btn-sm btn-go" disabled>
@@ -1135,7 +1565,10 @@ function GuideButton({ status, loading, written, onGuide, page }: { status: Guid
     );
   if (status && !status.saved && !status.signedIn)
     return (
-      <a className="btn btn-sm btn-go" href={`/api/github/connect?signin=1&back=${encodeURIComponent(page)}`}>
+      <a
+        className="btn btn-sm btn-go"
+        href={`/api/github/connect?signin=1&back=${encodeURIComponent(page)}`}
+      >
         Sign in to write a guide
       </a>
     );
@@ -1168,9 +1601,18 @@ const SAVED_SYSTEM = "gitmanual-pdf-os";
 
 const PDF_INSIDE: { icon: string; title: string }[] = [
   { icon: "M3 12h18M3 6h18M3 18h12", title: "The repo at a glance" },
-  { icon: "M20 6 9 17l-5-5", title: "The recommended install, start to finish" },
-  { icon: "M4 17l6-6-6-6M12 19h8", title: "Every other way, with what each needs" },
-  { icon: "M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4", title: "Settings, links and a version stamp" },
+  {
+    icon: "M20 6 9 17l-5-5",
+    title: "The recommended install, start to finish",
+  },
+  {
+    icon: "M4 17l6-6-6-6M12 19h8",
+    title: "Every other way, with what each needs",
+  },
+  {
+    icon: "M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4",
+    title: "Settings, links and a version stamp",
+  },
 ];
 const PDF_FOR = ["Offline setup", "Onboarding", "Client handover", "Workshops"];
 
@@ -1223,15 +1665,26 @@ function DownloadManual({ repo, os }: { repo: string; os: OS }) {
     setSaved(on ? o : null);
   };
 
-  const url = (format: "pdf" | "md") => `/api/download?${new URLSearchParams({ repo, os: system, format })}`;
+  const url = (format: "pdf" | "md") =>
+    `/api/download?${new URLSearchParams({ repo, os: system, format })}`;
   const back = `/${repo}/${OS_SLUG[os]}#pdf`;
   const countPdf = () =>
-    fetch("/api/interest", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ feature: "pdf", repo }), keepalive: true }).catch(() => {});
+    fetch("/api/interest", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ feature: "pdf", repo }),
+      keepalive: true,
+    }).catch(() => {});
   const name = repo.split("/")[1];
 
   return (
     <>
-      <button type="button" className="btn dl-toggle" onClick={open} aria-haspopup="dialog">
+      <button
+        type="button"
+        className="btn dl-toggle"
+        onClick={open}
+        aria-haspopup="dialog"
+      >
         <DownloadIcon /> Download PDF manual
       </button>
       <dialog
@@ -1239,15 +1692,30 @@ function DownloadManual({ repo, os }: { repo: string; os: OS }) {
         className="contact pdf-dialog"
         aria-labelledby="pdf-h"
         onClick={(e) => e.target === e.currentTarget && dialog.current?.close()}
-        onClose={() => window.location.hash === "#pdf" && history.replaceState(null, "", window.location.pathname + window.location.search)}
+        onClose={() =>
+          window.location.hash === "#pdf" &&
+          history.replaceState(
+            null,
+            "",
+            window.location.pathname + window.location.search,
+          )
+        }
       >
         <div className="contact-box">
           <div className="contact-head">
             <div>
               <h2 id="pdf-h">Your setup manual for {name}</h2>
-              <p>A printable PDF of this page, made for one system. Also as Markdown.</p>
+              <p>
+                A printable PDF of this page, made for one system. Also as
+                Markdown.
+              </p>
             </div>
-            <button type="button" className="contact-close" onClick={() => dialog.current?.close()} aria-label="Close">
+            <button
+              type="button"
+              className="contact-close"
+              onClick={() => dialog.current?.close()}
+              aria-label="Close"
+            >
               ×
             </button>
           </div>
@@ -1291,7 +1759,17 @@ function DownloadManual({ repo, os }: { repo: string; os: OS }) {
               <ul className="pdf-inside">
                 {PDF_INSIDE.map((x) => (
                   <li key={x.title}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
                       <path d={x.icon} />
                     </svg>
                     <span>{x.title}</span>
@@ -1312,21 +1790,41 @@ function DownloadManual({ repo, os }: { repo: string; os: OS }) {
               {saved && !changing ? (
                 <p>
                   For <strong>{OS_LABEL[system]}</strong>, your saved system.{" "}
-                  <button type="button" className="link" onClick={() => setChanging(true)}>
+                  <button
+                    type="button"
+                    className="link"
+                    onClick={() => setChanging(true)}
+                  >
                     Change
                   </button>
                 </p>
               ) : (
                 <>
-                  <div className="dl-systems" role="radiogroup" aria-label="System">
+                  <div
+                    className="dl-systems"
+                    role="radiogroup"
+                    aria-label="System"
+                  >
                     {OS_LIST.map((o) => (
-                      <button key={o} type="button" role="radio" aria-checked={system === o} className={system === o ? "on" : ""} onClick={() => pick(o)}>
+                      <button
+                        key={o}
+                        type="button"
+                        role="radio"
+                        aria-checked={system === o}
+                        className={system === o ? "on" : ""}
+                        onClick={() => pick(o)}
+                      >
                         {OS_LABEL[o]}
                       </button>
                     ))}
                   </div>
                   <label className="pdf-remember">
-                    <input type="checkbox" checked={remember} onChange={(e) => save(e.target.checked)} /> Remember my system
+                    <input
+                      type="checkbox"
+                      checked={remember}
+                      onChange={(e) => save(e.target.checked)}
+                    />{" "}
+                    Remember my system
                   </label>
                 </>
               )}
@@ -1346,18 +1844,27 @@ function DownloadManual({ repo, os }: { repo: string; os: OS }) {
                     countPdf();
                   }}
                 >
-                  <DownloadIcon /> {soon ? "Coming soon. Thank you!" : "Download PDF"}
+                  <DownloadIcon />{" "}
+                  {soon ? "Coming soon. Thank you!" : "Download PDF"}
                 </button>
               ) : pro.pro && !PDF_DESIGN ? null : pro.pro ? (
                 <a className="btn btn-go" href={url("pdf")}>
                   <DownloadIcon /> Download PDF
                 </a>
               ) : pro.login ? (
-                <a className="btn btn-go" href={proUrl(`${back}`)} onClick={() => countPdf()}>
+                <a
+                  className="btn btn-go"
+                  href={proUrl(`${back}`)}
+                  onClick={() => countPdf()}
+                >
                   Get Pro to download <span className="dl-pro">Pro</span>
                 </a>
               ) : (
-                <a className="btn btn-go" href={`/api/github/connect?signin=1&back=${encodeURIComponent(back)}`} onClick={() => countPdf()}>
+                <a
+                  className="btn btn-go"
+                  href={`/api/github/connect?signin=1&back=${encodeURIComponent(back)}`}
+                  onClick={() => countPdf()}
+                >
                   <GitHubMark /> Sign in to download
                 </a>
               )}
@@ -1385,7 +1892,13 @@ function DownloadManual({ repo, os }: { repo: string; os: OS }) {
 
 function GitHubMark() {
   return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="currentColor"
+      aria-hidden="true"
+    >
       <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" />
     </svg>
   );
@@ -1393,7 +1906,17 @@ function GitHubMark() {
 
 function DownloadIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      aria-hidden="true"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <path d="M8 2.5v8M4.5 7 8 10.5 11.5 7M3 13.5h10" />
     </svg>
   );
@@ -1447,7 +1970,14 @@ function BeforeYouStart({ facts }: { facts: Fact[] }) {
   );
 }
 
-type Door = { id: string; tag: string; title: string; sub: string; go?: () => void; href?: string };
+type Door = {
+  id: string;
+  tag: string;
+  title: string;
+  sub: string;
+  go?: () => void;
+  href?: string;
+};
 
 // Similar repos as small cards, each opening its manual on the same system.
 function AltCards({ list, os }: { list: Alternative[]; os: OS }) {
@@ -1460,7 +1990,11 @@ function AltCards({ list, os }: { list: Alternative[]; os: OS }) {
               {r.fullName.split("/")[1]}
               <span className="num">★ {compactCount(r.stars)}</span>
             </span>
-            {r.description && <span className="alt-desc">{r.description.replace(/:[a-z0-9_+-]+:\s*/g, "")}</span>}
+            {r.description && (
+              <span className="alt-desc">
+                {r.description.replace(/:[a-z0-9_+-]+:\s*/g, "")}
+              </span>
+            )}
           </a>
         </li>
       ))}
@@ -1469,7 +2003,15 @@ function AltCards({ list, os }: { list: Alternative[]; os: OS }) {
 }
 
 // "More like ollama that run on macOS": the end of every manual, so there's always somewhere to go next.
-function Related({ list, name, os }: { list: Alternative[]; name: string; os: OS }) {
+function Related({
+  list,
+  name,
+  os,
+}: {
+  list: Alternative[];
+  name: string;
+  os: OS;
+}) {
   if (!list.length) return null;
   return (
     <section className="alts related" aria-labelledby="related-h">
@@ -1498,38 +2040,99 @@ function StartHere({
   analysis: Analysis;
   onGo: (id: string, mode?: Mode) => void;
 }) {
+  const { t } = useI18n();
   // Our steps are thin when we found little more than "clone it"; the project's own site is the better start then.
   // The maintainers' own guide or docs site beats our generated steps when there's no one-step install.
-  const best = way ? "install" : guides.doc ? "guide" : guides.docs ? "docs" : guides.website && (steps <= 2 || /^https?:\/\/docs\./.test(guides.website)) ? "website" : "steps";
+  const best = way
+    ? "install"
+    : guides.doc
+      ? "guide"
+      : guides.docs
+        ? "docs"
+        : guides.website &&
+            (steps <= 2 || /^https?:\/\/docs\./.test(guides.website))
+          ? "website"
+          : "steps";
   const all: Door[] = [
-    ...(way ? [{ id: "install", ...way, go: () => onGo("main-tabs", "install") }] : []),
-    ...(guides.doc
-      ? [{ id: "guide", tag: "Setup guide", title: `Read the maintainers' ${guides.doc.label.toLowerCase()}`, sub: guides.doc.path, go: () => onGo("maintainer-guide", "source") }]
+    ...(way
+      ? [{ id: "install", ...way, go: () => onGo("main-tabs", "install") }]
       : []),
-    { id: "steps", tag: "Steps", title: `Follow our ${steps} steps`, sub: `Copy-paste commands for ${OS_LABEL[os]}.`, go: () => onGo("our-steps", "source") },
-    ...(guides.website ? [{ id: "website", tag: "Website ↗", title: host(guides.website), sub: "The project's own site.", href: guides.website }] : []),
-    ...(guides.docs ? [{ id: "docs", tag: "Docs ↗", title: host(guides.docs), sub: "Linked from the README.", href: guides.docs }] : []),
+    ...(guides.doc
+      ? [
+          {
+            id: "guide",
+            tag: "Setup guide",
+            title: `Read the maintainers' ${guides.doc.label.toLowerCase()}`,
+            sub: guides.doc.path,
+            go: () => onGo("maintainer-guide", "source"),
+          },
+        ]
+      : []),
+    {
+      id: "steps",
+      tag: "Steps",
+      title: `Follow our ${steps} steps`,
+      sub: `Copy-paste commands for ${OS_LABEL[os]}.`,
+      go: () => onGo("our-steps", "source"),
+    },
+    ...(guides.website
+      ? [
+          {
+            id: "website",
+            tag: "Website ↗",
+            title: host(guides.website),
+            sub: "The project's own site.",
+            href: guides.website,
+          },
+        ]
+      : []),
+    ...(guides.docs
+      ? [
+          {
+            id: "docs",
+            tag: "Docs ↗",
+            title: host(guides.docs),
+            sub: "Linked from the README.",
+            href: guides.docs,
+          },
+        ]
+      : []),
     ...(guides.devcontainer
-      ? [{ id: "codespaces", tag: "In the browser ↗", title: "Open in GitHub Codespaces", sub: "Nothing to install.", href: `https://codespaces.new/${meta.fullName}` }]
+      ? [
+          {
+            id: "codespaces",
+            tag: "In the browser ↗",
+            title: "Open in GitHub Codespaces",
+            sub: "Nothing to install.",
+            href: `https://codespaces.new/${meta.fullName}`,
+          },
+        ]
       : []),
   ];
   // One quick choice: the best start first, then up to two more, and the project's website always (as on the live
   // site); docs and Codespaces beyond that as plain links.
-  const ordered = [...all.filter((d) => d.id === best), ...all.filter((d) => d.id !== best)];
+  const ordered = [
+    ...all.filter((d) => d.id === best),
+    ...all.filter((d) => d.id !== best),
+  ];
   const doors = ordered.filter((d, i) => i < 3 || d.id === "website");
   const more = ordered.filter((d) => !doors.includes(d));
   // The one thing the doors can't show: what else has to be running or filled in before it works.
   const secrets = a.envVars.filter((e) => e.secret && !e.optional).length;
   const extras = [
     ...a.services.map((x) => x.name),
-    ...(a.envVars.length ? [`${a.envVars.length} ${a.envVars.length === 1 ? "setting" : "settings"} in .env${secrets ? ` (${secrets} secret)` : ""}`] : []),
+    ...(a.envVars.length
+      ? [
+          `${a.envVars.length} ${a.envVars.length === 1 ? "setting" : "settings"} in .env${secrets ? ` (${secrets} secret)` : ""}`,
+        ]
+      : []),
   ];
   // A single door ("Follow our steps") is no choice at all; the steps right below say the same.
   if (doors.length <= 1 && !extras.length) return null;
   return (
     <section className="start" aria-labelledby="start-h">
       <h2 id="start-h" className="start-h">
-        Start here
+        {t("startHere")}
       </h2>
       <div className="start-grid">
         {doors.map((d) => {
@@ -1537,14 +2140,23 @@ function StartHere({
             <>
               <span className="door-tag">{d.tag}</span>
               <b translate={d.href ? "no" : undefined}>{d.title}</b>
-              <span className="door-sub" translate={d.id === "guide" ? "no" : undefined}>
+              <span
+                className="door-sub"
+                translate={d.id === "guide" ? "no" : undefined}
+              >
                 {d.sub}
               </span>
             </>
           );
           const cls = `door${d.id === best ? " best" : ""}`;
           return d.href ? (
-            <a key={d.id} className={cls} href={d.href} target="_blank" rel="noreferrer">
+            <a
+              key={d.id}
+              className={cls}
+              href={d.href}
+              target="_blank"
+              rel="noreferrer"
+            >
               {body}
             </a>
           ) : (
@@ -1576,7 +2188,9 @@ function StartHere({
       {extras.length > 0 && (
         <p className="start-heads">
           <span className="start-heads-tag">Heads-up</span>
-          {way || guides.doc ? "Building it yourself? It also needs " : "It also needs "}
+          {way || guides.doc
+            ? "Building it yourself? It also needs "
+            : "It also needs "}
           {extras.map((x, i) => (
             <span key={x}>
               {i > 0 && (i === extras.length - 1 ? " and " : ", ")}
@@ -1594,27 +2208,66 @@ function StartHere({
 }
 
 // The setup or launch script the maintainers ship, at the top of "Build from source", where it gets used.
-function RepoScript({ meta, guides, os }: { meta: Result["meta"]; guides: Guides; os: OS }) {
-  const scripts = guides.scripts.filter((s) => s.windows === (os === "windows")).concat(guides.scripts.filter((s) => s.windows !== (os === "windows")));
+function RepoScript({
+  meta,
+  guides,
+  os,
+}: {
+  meta: Result["meta"];
+  guides: Guides;
+  os: OS;
+}) {
+  const scripts = guides.scripts
+    .filter((s) => s.windows === (os === "windows"))
+    .concat(guides.scripts.filter((s) => s.windows !== (os === "windows")));
   if (!scripts.length) return null;
   return (
     <div className="start-script">
-      <span className="door-tag">{/^(start|run|launch|webui)/i.test(scripts[0].path.split("/").pop()!) ? "Launch script in the repo" : "Setup script in the repo"}</span>
+      <span className="door-tag">
+        {/^(start|run|launch|webui)/i.test(scripts[0].path.split("/").pop()!)
+          ? "Launch script in the repo"
+          : "Setup script in the repo"}
+      </span>
       <p className="note">
         The maintainers included <code>{scripts[0].path}</code>.{" "}
-        {scripts[0].run ? "Run it from the cloned folder after " : "Open it to see how it's meant to be run: "}
-        <a href={`${meta.htmlUrl}/blob/${meta.branch}/${scripts[0].path}`} target="_blank" rel="noreferrer">
+        {scripts[0].run
+          ? "Run it from the cloned folder after "
+          : "Open it to see how it's meant to be run: "}
+        <a
+          href={`${meta.htmlUrl}/blob/${meta.branch}/${scripts[0].path}`}
+          target="_blank"
+          rel="noreferrer"
+        >
           {scripts[0].run ? "reading it" : `${scripts[0].path} on GitHub`}
         </a>
         .
       </p>
       {scripts[0].run && <CodeBlock text={scripts[0].run} />}
-      {scripts.length > 1 && <p className="note">Also: {scripts.slice(1).map((s) => s.path).join(", ")}</p>}
+      {scripts.length > 1 && (
+        <p className="note">
+          Also:{" "}
+          {scripts
+            .slice(1)
+            .map((s) => s.path)
+            .join(", ")}
+        </p>
+      )}
     </div>
   );
 }
 
-function DidItWork({ repo, os, votes, onVotes }: { repo: string; os: OS; votes: Votes; onVotes: (v: Votes) => void }) {
+function DidItWork({
+  repo,
+  os,
+  votes,
+  onVotes,
+}: {
+  repo: string;
+  os: OS;
+  votes: Votes;
+  onVotes: (v: Votes) => void;
+}) {
+  const { t, locale } = useI18n();
   const storeKey = `gitmanual-vote:${repo.toLowerCase()}`;
   const [voted, setVoted] = useState<string | null>(null);
   useEffect(() => setVoted(localStorage.getItem(storeKey)), [storeKey]);
@@ -1637,19 +2290,34 @@ function DidItWork({ repo, os, votes, onVotes }: { repo: string; os: OS; votes: 
   return (
     <div className="panel vote">
       <div>
-        <h3>{voted ? (voted === "worked" ? "Nice, it's running 🎉" : "Thanks, that helps others") : "Did you get it running?"}</h3>
+        <h3>
+          {voted
+            ? voted === "worked"
+              ? (locale === "th" ? "ยอดเยี่ยม รันใช้งานได้แล้ว 🎉" : "Nice, it's running 🎉")
+              : (locale === "th" ? "ขอบคุณที่แจ้ง ช่วยผู้ใช้อื่นได้มาก" : "Thanks, that helps others")
+            : t("didYouGetRunning")}
+        </h3>
         <p className="note">
-          {here ? `On ${OS_LABEL[os]}: ${here.worked} got it running, ${here.stuck} got stuck.` : `No reports for ${OS_LABEL[os]} yet.`}
-          {voted === "stuck" && " The guide below can help with the step that failed."}
+          {here
+            ? (locale === "th"
+                ? `บน ${OS_LABEL[os]}: ${here.worked} คนรันสำเร็จ, ${here.stuck} คนติดปัญหา`
+                : `On ${OS_LABEL[os]}: ${here.worked} got it running, ${here.stuck} got stuck.`)
+            : (locale === "th"
+                ? `ยังไม่มีรายงานสำหรับ ${OS_LABEL[os]}`
+                : `No reports for ${OS_LABEL[os]} yet.`)}
+          {voted === "stuck" &&
+            (locale === "th"
+              ? " คำแนะนำด้านล่างอาจช่วยแก้ปัญหาในขั้นตอนที่ติดได้"
+              : " The guide below can help with the step that failed.")}
         </p>
       </div>
       {!voted && (
         <div className="vote-btns">
           <button className="btn btn-sm vote-yes" onClick={() => vote(true)}>
-            ✓ It works
+            {locale === "th" ? "✓ ใช้งานได้สำเร็จ" : "✓ It works"}
           </button>
           <button className="btn btn-sm" onClick={() => vote(false)}>
-            I got stuck
+            {locale === "th" ? "✕ ฉันติดปัญหา" : "I got stuck"}
           </button>
         </div>
       )}
@@ -1659,17 +2327,33 @@ function DidItWork({ repo, os, votes, onVotes }: { repo: string; os: OS; votes: 
 
 // For maintainers: a README badge that links newcomers to this manual.
 function BadgeCard({ fullName }: { fullName: string }) {
+  const { locale } = useI18n();
   // The same address on the server and in the browser, so the Markdown never differs between the two.
-  const site = (process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000").replace(/\/$/, "");
+  const site = (
+    process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3035"
+  ).replace(/\/$/, "");
   const markdown = `[![Setup manual](${site}/${fullName}/badge.svg)](${site}/${fullName})`;
   return (
     <div className="side-sub">
-      <h4>Is this your repo?</h4>
-      <p className="badge-note">Add a badge to your README so newcomers find these steps.</p>
+      <h4>{locale === "th" ? "นี่คือโปรเจกต์ของคุณใช่ไหม?" : "Is this your repo?"}</h4>
+      <p className="badge-note">
+        {locale === "th"
+          ? "ติดป้าย Badge ใน README เพื่อให้ผู้ใช้ใหม่เปิดดูขั้นตอนติดตั้งได้ทันที"
+          : "Add a badge to your README so newcomers find these steps."}
+      </p>
       {/* eslint-disable-next-line @next/next/no-img-element -- a tiny SVG badge */}
-      <img className="badge-preview" src={`/${fullName}/badge.svg`} alt="Setup manual badge" height={20} />
+      <img
+        className="badge-preview"
+        src={`/${fullName}/badge.svg`}
+        alt="Setup manual badge"
+        height={20}
+      />
       <code className="badge-code">{markdown}</code>
-      <CopyButton text={markdown} className="btn btn-sm" label="Copy the badge Markdown" />
+      <CopyButton
+        text={markdown}
+        className="btn btn-sm"
+        label="Copy the badge Markdown"
+      />
     </div>
   );
 }

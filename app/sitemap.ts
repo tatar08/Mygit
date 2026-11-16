@@ -4,7 +4,7 @@ import { OS_LIST, OS_SLUG } from "@/lib/os";
 import { sortedPicks } from "@/lib/picks";
 import { isPublished, loadLists } from "./lists/data";
 
-const SITE = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+const SITE = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3035";
 
 // Rebuilt at most once an hour, so new repos on the shelf get discovered.
 export const revalidate = 3600;
@@ -19,12 +19,41 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${SITE}/how-it-works`, changeFrequency: "monthly", priority: 0.5 },
     { url: `${SITE}/private`, changeFrequency: "monthly", priority: 0.5 },
     { url: `${SITE}/developers`, changeFrequency: "monthly", priority: 0.5 },
-    ...(lists.length ? [{ url: `${SITE}/lists`, changeFrequency: "daily" as const, priority: 0.8 }] : []),
-    ...lists.map((l) => ({ url: `${SITE}/lists/${l.slug}`, changeFrequency: "daily" as const, priority: 0.8 })),
-    ...["about", "privacy", "terms", "contact"].map((p) => ({ url: `${SITE}/${p}`, changeFrequency: "yearly" as const, priority: 0.3 })),
-    ...((await sortedPicks()).length ? [{ url: `${SITE}/finds`, changeFrequency: "weekly" as const, priority: 0.8 }] : []),
+    ...(lists.length
+      ? [
+          {
+            url: `${SITE}/lists`,
+            changeFrequency: "daily" as const,
+            priority: 0.8,
+          },
+        ]
+      : []),
+    ...lists.map((l) => ({
+      url: `${SITE}/lists/${l.slug}`,
+      changeFrequency: "daily" as const,
+      priority: 0.8,
+    })),
+    ...["about", "privacy", "terms", "contact"].map((p) => ({
+      url: `${SITE}/${p}`,
+      changeFrequency: "yearly" as const,
+      priority: 0.3,
+    })),
+    ...((await sortedPicks()).length
+      ? [
+          {
+            url: `${SITE}/finds`,
+            changeFrequency: "weekly" as const,
+            priority: 0.8,
+          },
+        ]
+      : []),
     ...repos.flatMap((r) => [
-      { url: `${SITE}/${r.fullName}`, lastModified: new Date(r.analyzedAt), changeFrequency: "weekly" as const, priority: 0.7 },
+      {
+        url: `${SITE}/${r.fullName}`,
+        lastModified: new Date(r.analyzedAt),
+        changeFrequency: "weekly" as const,
+        priority: 0.7,
+      },
       ...OS_LIST.map((os) => ({
         url: `${SITE}/${r.fullName}/${OS_SLUG[os]}`,
         lastModified: new Date(r.analyzedAt),

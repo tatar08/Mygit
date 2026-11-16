@@ -231,10 +231,108 @@ type SearchItem = {
   license: { spdx_id: string } | null;
   forks_count: number;
   open_issues_count: number;
+  stargazers_count?: number;
+  html_url?: string;
+  created_at?: string;
   owner: { login: string; type: "User" | "Organization" };
   language: string | null;
   topics?: string[];
 };
+
+export type HotRepoItem = {
+  fullName: string;
+  description: string | null;
+  stars: number;
+  forks: number;
+  language: string | null;
+  topics: string[];
+  htmlUrl: string;
+  createdAt: string;
+};
+
+export type HotPeriod = "day" | "week" | "month" | "year" | "top-star" | "top-fork";
+export type HotCategory = "all" | "ai" | "python" | "typescript" | "rust" | "go" | "self-hosted";
+
+const hotCacheStore = globalThis as typeof globalThis & {
+  gitmanualHotCache?: Map<string, { items: HotRepoItem[]; fetchedAt: number }>;
+};
+const HOT_CACHE_MS = 15 * 60 * 1000;
+
+export async function fetchHotRepos(opts: {
+  period?: HotPeriod;
+  category?: HotCategory;
+  refresh?: boolean;
+  limit?: number;
+} = {}): Promise<{ items: HotRepoItem[]; fetchedAt: number }> {
+  const period = opts.period ?? "week";
+  const category = opts.category ?? "all";
+  const limit = opts.limit ?? 24;
+  const cacheKey = `${period}:${category}`;
+
+  hotCacheStore.gitmanualHotCache ??= new Map();
+  const cached = hotCacheStore.gitmanualHotCache.get(cacheKey);
+  if (!opts.refresh && cached && Date.now() - cached.fetchedAt < HOT_CACHE_MS) {
+    return { items: cached.items.slice(0, limit), fetchedAt: cached.fetchedAt };
+  }
+
+  const day = (n: number) => new Date(Date.now() - n * 864e5).toISOString().slice(0, 10);
+  const windowQuery =
+    period === "day"
+      ? `created:>${day(2)} stars:>15`
+      : period === "month"
+        ? `created:>${day(30)} stars:>150`
+        : period === "year"
+          ? `created:>${day(365)} stars:>500`
+          : period === "top-star"
+            ? `stars:>5000`
+            : period === "top-fork"
+              ? `forks:>1000`
+              : `created:>${day(7)} stars:>40`;
+
+  const sort: "stars" | "forks" = period === "top-fork" ? "forks" : "stars";
+
+  const catQuery =
+    category === "ai"
+      ? "topic:ai"
+      : category === "self-hosted"
+        ? "topic:self-hosted"
+        : category === "all"
+          ? ""
+          : `language:${category}`;
+
+  const q = [windowQuery, catQuery].filter(Boolean).join(" ");
+  let { items: rawItems } = await search(q, 1, sort);
+
+  // If "Today" + specific category has too few results, broaden slightly to 7 days
+  if (rawItems.length < 6 && period === "day") {
+    const fallbackQ = [`created:>${day(7)} stars:>20`, catQuery].filter(Boolean).join(" ");
+    const fallback = await search(fallbackQ, 1, sort);
+    rawItems = fallback.items;
+  }
+
+  const seen = new Set<string>();
+  const items: HotRepoItem[] = [];
+  for (const r of rawItems) {
+    if (items.length >= 36 || seen.has(r.full_name)) continue;
+    seen.add(r.full_name);
+    if (!isSoftware(r)) continue;
+    if (BAIT.test(`${r.full_name} ${r.description ?? ""}`)) continue;
+    items.push({
+      fullName: r.full_name,
+      description: r.description ?? null,
+      stars: r.stargazers_count ?? 0,
+      forks: r.forks_count ?? 0,
+      language: r.language ?? null,
+      topics: (r.topics ?? []).slice(0, 4),
+      htmlUrl: r.html_url ?? `https://github.com/${r.full_name}`,
+      createdAt: r.created_at ?? "",
+    });
+  }
+
+  const fetchedAt = Date.now();
+  hotCacheStore.gitmanualHotCache.set(cacheKey, { items, fetchedAt });
+  return { items: items.slice(0, limit), fetchedAt };
+}
 
 // Reading material rather than software: awesome lists, courses, guides and prompt collections have nothing to set up.
 const NOT_SOFTWARE = /^(awesome(-list)?|tutorials?|course|courses|education|learning|learning-resources|interview|interview-questions|roadmap|books?|cheatsheet|prompts?|system-prompts?|guide|guides|study)$/;
@@ -268,8 +366,8 @@ async function pickReal(items: SearchItem[], picked: string[], seen: Set<string>
   }
 }
 
-const search = (q: string, page = 1) =>
-  gh<{ items: SearchItem[] }>(`/search/repositories?q=${encodeURIComponent(`${q} fork:false archived:false`)}&sort=stars&order=desc&per_page=50&page=${page}`);
+const search = (q: string, page = 1, sort: "stars" | "forks" = "stars") =>
+  gh<{ items: SearchItem[] }>(`/search/repositories?q=${encodeURIComponent(`${q} fork:false archived:false`)}&sort=${sort}&order=desc&per_page=50&page=${page}`);
 
 // GitHub has no API for its Trending page. The closest official signal: new repos gathering stars fast, in two
 // windows so this week's breakouts and last month's steady climbers both show up.
