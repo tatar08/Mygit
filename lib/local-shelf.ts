@@ -8,9 +8,39 @@ export function getLocalShelf(): RepoCard[] {
   if (typeof window === "undefined") return [];
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
+    const parsed = raw ? JSON.parse(raw) : [];
+    const list: RepoCard[] = Array.isArray(parsed) ? parsed : [];
+    const existingKeys = new Set(list.map((r) => r.fullName.toLowerCase()));
+
+    // Auto-migrate any legacy `gitmanual-shelf:owner/repo` flags into the structured list
+    let migrated = false;
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith("gitmanual-shelf:") && localStorage.getItem(k) === "1") {
+        const fullName = k.slice("gitmanual-shelf:".length);
+        if (fullName.includes("/") && !existingKeys.has(fullName.toLowerCase())) {
+          existingKeys.add(fullName.toLowerCase());
+          list.unshift({
+            fullName,
+            description: null,
+            stars: 0,
+            language: null,
+            difficulty: "Moderate",
+            views: 0,
+            worked: 0,
+            stuck: 0,
+            analyzedAt: Date.now(),
+            risingAt: null,
+            installed: false,
+          });
+          migrated = true;
+        }
+      }
+    }
+    if (migrated) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+    }
+    return list;
   } catch {
     return [];
   }

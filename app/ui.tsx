@@ -453,6 +453,9 @@ export function SaveToShelfButton({
           const local = getLocalRepoStatus(fullName);
           setSaved(local.saved);
           setInstalledState(local.installed);
+          if (local.saved && meta) {
+            saveToLocalShelf({ fullName, ...meta, installed: local.installed });
+          }
         }
       })
       .catch(() => {
