@@ -29,8 +29,10 @@ export async function askAiText(
   ]);
 
   if (geminiKey) {
-    const model = geminiModel || "gemini-2.5-flash";
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(geminiKey)}`;
+    const primaryModel = geminiModel || "gemini-2.5-flash";
+    const candidates = Array.from(
+      new Set([primaryModel, "gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.0-flash"]),
+    );
 
     const body: Record<string, unknown> = {
       contents: [{ role: "user", parts: [{ text: prompt }] }],
@@ -43,25 +45,37 @@ export async function askAiText(
       body.systemInstruction = { parts: [{ text: opts.system }] };
     }
 
-    const res = await fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
+    let lastError = "Gemini API error";
+    for (const model of candidates) {
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(geminiKey)}`;
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
 
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        const text =
+          data?.candidates?.[0]?.content?.parts
+            ?.map((p: { text?: string }) => p.text ?? "")
+            .join("")
+            .trim() || "";
+        if (text) return { text, provider: "gemini" };
+        lastError = "Empty response from Gemini API";
+        continue;
+      }
+
       const msg = data?.error?.message || `Gemini API error (${res.status})`;
-      throw new Error(sanitizeError(msg));
+      lastError = sanitizeError(msg);
+      // Retry with next fallback model on transient overload/rate-limit/model-not-found
+      if (res.status === 429 || res.status === 503 || res.status === 404 || /high demand|overloaded/i.test(msg)) {
+        continue;
+      }
+      throw new Error(lastError);
     }
 
-    const text =
-      data?.candidates?.[0]?.content?.parts
-        ?.map((p: { text?: string }) => p.text ?? "")
-        .join("")
-        .trim() || "";
-    if (!text) throw new Error("Empty response from Gemini API");
-    return { text, provider: "gemini" };
+    throw new Error(lastError);
   }
 
   if (ollamaUrl) {
