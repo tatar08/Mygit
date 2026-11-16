@@ -56,11 +56,19 @@ export function ShelfList({
   query: ShelfQuery;
   filtered: boolean;
 }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
+  const th = locale === "th";
   const [localRepos, setLocalRepos] = useState<RepoCard[] | null>(null);
   const [removedKeys, setRemovedKeys] = useState<Set<string>>(new Set());
   const [importMsg, setImportMsg] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // AI Shelf Assistant state
+  const [aiOpen, setAiOpen] = useState(false);
+  const [aiQuestion, setAiQuestion] = useState("");
+  const [aiAnswer, setAiAnswer] = useState<string | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!dbAvailable) {
@@ -176,6 +184,33 @@ export function ShelfList({
     }
   };
 
+  const handleAskShelfAi = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!aiQuestion.trim() || aiLoading) return;
+    setAiLoading(true);
+    setAiError(null);
+    setAiAnswer(null);
+    try {
+      const reposForAi = dbAvailable ? serverRepos : getLocalShelf();
+      const res = await fetch("/api/ai/shelf-chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          question: aiQuestion.trim(),
+          repos: reposForAi,
+          locale,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "AI query failed");
+      setAiAnswer(data.answer);
+    } catch (err) {
+      setAiError(err instanceof Error ? err.message : "AI query failed");
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
   const displayTotal = dbAvailable ? Math.max(0, total - removedKeys.size) : displayedRepos.length;
 
   return (
@@ -194,6 +229,14 @@ export function ShelfList({
 
         <div className="shelf-json-actions">
           {importMsg && <span className="shelf-import-msg">{importMsg}</span>}
+          <button
+            type="button"
+            className="btn btn-go btn-sm"
+            style={{ height: 32, padding: "0 12px", fontSize: 12 }}
+            onClick={() => setAiOpen((v) => !v)}
+          >
+            {th ? "✨ ถาม AI จากคลัง" : "✨ Ask AI about Shelf"}
+          </button>
           <button type="button" className="btn btn-sm shelf-json-btn" onClick={handleExportJson}>
             ↓ {t("shelfExportJson")}
           </button>
@@ -213,6 +256,29 @@ export function ShelfList({
           />
         </div>
       </div>
+
+      {aiOpen && (
+        <section className="panel freebie-settings-panel" style={{ marginBottom: 20 }}>
+          <form onSubmit={handleAskShelfAi} className="ai-search-bar" style={{ marginBottom: aiAnswer || aiError ? 12 : 0 }}>
+            <input
+              type="text"
+              value={aiQuestion}
+              onChange={(e) => setAiQuestion(e.target.value)}
+              placeholder={
+                th
+                  ? "ถาม AI เช่น: ในคลังมีตัวไหนทำระบบ POS หรือ Agent บนเครื่องได้บ้าง เทียบข้อดีข้อเสียให้หน่อย..."
+                  : "Ask AI: e.g. Compare the local AI tools in my shelf, which one is easiest to set up?"
+              }
+              className="ai-search-input"
+            />
+            <button type="submit" className="btn btn-go btn-sm" disabled={aiLoading || !aiQuestion.trim()}>
+              {aiLoading ? "..." : th ? "✨ ถาม AI" : "✨ Ask AI"}
+            </button>
+          </form>
+          {aiError && <p className="add-modal-error" style={{ margin: 0 }}>{aiError}</p>}
+          {aiAnswer && <div className="ai-answer-box">{aiAnswer}</div>}
+        </section>
+      )}
 
       {displayedRepos.length ? (
         <ul className="shelf-grid">

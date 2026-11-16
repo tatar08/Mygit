@@ -1,0 +1,88 @@
+export type AiResult = {
+  text: string;
+  provider: "gemini" | "ollama";
+};
+
+export function hasAiConfigured(): boolean {
+  return Boolean(process.env.GEMINI_API_KEY?.trim() || process.env.OLLAMA_URL?.trim());
+}
+
+export async function askAiText(
+  prompt: string,
+  opts: { system?: string; json?: boolean; temperature?: number } = {},
+): Promise<AiResult> {
+  const geminiKey = process.env.GEMINI_API_KEY?.trim();
+  const ollamaUrl = process.env.OLLAMA_URL?.trim();
+
+  if (geminiKey) {
+    const model = process.env.GEMINI_MODEL?.trim() || "gemini-2.5-flash";
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(geminiKey)}`;
+
+    const body: Record<string, unknown> = {
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      generationConfig: {
+        temperature: opts.temperature ?? 0.3,
+        ...(opts.json ? { responseMimeType: "application/json" } : {}),
+      },
+    };
+    if (opts.system) {
+      body.systemInstruction = { parts: [{ text: opts.system }] };
+    }
+
+    const res = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const msg = data?.error?.message || `Gemini API error (${res.status})`;
+      throw new Error(msg);
+    }
+
+    const text =
+      data?.candidates?.[0]?.content?.parts
+        ?.map((p: { text?: string }) => p.text ?? "")
+        .join("")
+        .trim() || "";
+    if (!text) throw new Error("Empty response from Gemini API");
+    return { text, provider: "gemini" };
+  }
+
+  if (ollamaUrl) {
+    const model = process.env.OLLAMA_MODEL?.trim() || "qwen2.5:7b";
+    const res = await fetch(`${ollamaUrl.replace(/\/$/, "")}/api/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model,
+        stream: false,
+        ...(opts.json ? { format: "json" } : {}),
+        messages: [
+          ...(opts.system ? [{ role: "system", content: opts.system }] : []),
+          { role: "user", content: prompt },
+        ],
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data?.error || `Ollama error (${res.status})`);
+    }
+    const text = data?.message?.content?.trim() || "";
+    if (!text) throw new Error("Empty response from Ollama");
+    return { text, provider: "ollama" };
+  }
+
+  throw new Error(
+    "AI is not configured. Add GEMINI_API_KEY (free tier at aistudio.google.com) to .env.local or Vercel Environment Variables.",
+  );
+}
+
+export function extractJson<T>(raw: string): T {
+  const cleaned = raw
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+  return JSON.parse(cleaned) as T;
+}

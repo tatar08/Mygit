@@ -130,6 +130,19 @@ const SCHEMA = `
     value TEXT NOT NULL,
     updated_at INTEGER NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS freebies (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    url TEXT NOT NULL,
+    source TEXT NOT NULL,
+    category TEXT NOT NULL,
+    summary_th TEXT NOT NULL,
+    is_free INTEGER NOT NULL DEFAULT 1,
+    expires_at TEXT,
+    notified INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS freebies_created ON freebies (created_at DESC);
 `;
 
 // One connection per server process. Kept on globalThis because dev hot reloads re-run this module,
@@ -225,6 +238,86 @@ export async function setSetting(key: string, value: string): Promise<boolean> {
       args: [key, value, Date.now()],
     });
     return true;
+  });
+}
+
+export type FreebieRecord = {
+  id: string;
+  title: string;
+  url: string;
+  source: string;
+  category: "AI" | "VPS" | "Open Source" | "Games" | "Deals";
+  summaryTh: string;
+  isFree: boolean;
+  expiresAt: string | null;
+  notified: boolean;
+  createdAt: number;
+};
+
+export async function listFreebies(category?: string, limit = 60): Promise<FreebieRecord[]> {
+  return safely([], async (c) => {
+    const where = category && category !== "All" ? "WHERE category = ?" : "";
+    const args = category && category !== "All" ? [category, limit] : [limit];
+    const res = await c.execute({
+      sql: `SELECT id, title, url, source, category, summary_th, is_free, expires_at, notified, created_at
+            FROM freebies ${where}
+            ORDER BY created_at DESC LIMIT ?`,
+      args,
+    });
+    return res.rows.map((r) => ({
+      id: String(r.id),
+      title: String(r.title),
+      url: String(r.url),
+      source: String(r.source),
+      category: String(r.category) as FreebieRecord["category"],
+      summaryTh: String(r.summary_th),
+      isFree: Number(r.is_free) === 1,
+      expiresAt: r.expires_at ? String(r.expires_at) : null,
+      notified: Number(r.notified) === 1,
+      createdAt: Number(r.created_at),
+    }));
+  });
+}
+
+export async function saveFreebies(items: FreebieRecord[]): Promise<number> {
+  if (!items.length) return 0;
+  return safely(0, async (c) => {
+    let saved = 0;
+    for (const item of items) {
+      await c.execute({
+        sql: `INSERT INTO freebies (id, title, url, source, category, summary_th, is_free, expires_at, notified, created_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              ON CONFLICT(id) DO UPDATE SET
+                summary_th = excluded.summary_th,
+                category = excluded.category,
+                expires_at = excluded.expires_at`,
+        args: [
+          item.id,
+          item.title,
+          item.url,
+          item.source,
+          item.category,
+          item.summaryTh,
+          item.isFree ? 1 : 0,
+          item.expiresAt,
+          item.notified ? 1 : 0,
+          item.createdAt,
+        ],
+      });
+      saved++;
+    }
+    return saved;
+  });
+}
+
+export async function markFreebiesNotified(ids: string[]): Promise<void> {
+  if (!ids.length) return;
+  await safely(null, async (c) => {
+    const placeholders = ids.map(() => "?").join(",");
+    await c.execute({
+      sql: `UPDATE freebies SET notified = 1 WHERE id IN (${placeholders})`,
+      args: ids,
+    });
   });
 }
 

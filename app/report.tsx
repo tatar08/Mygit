@@ -28,6 +28,7 @@ import { disconnect, fetchPrivate, PrivateAccess } from "./private";
 import { CarbonAd } from "./carbon";
 import { Chat } from "./chat";
 import { ShowcaseSection } from "./showcase";
+import { AiRepoAssistant } from "./ai-assistant";
 import { extractShowcase } from "@/lib/showcase";
 import {
   AddProjectButton,
@@ -974,6 +975,17 @@ function Report({
               )}
             </>
           )}
+
+          <AiRepoAssistant
+            fullName={meta.fullName}
+            description={meta.description}
+            language={meta.language}
+            stacks={a.stacks}
+            os={os}
+            arch={myArch}
+            parts={parts.map((p) => p.name)}
+            steps={steps.flatMap((s) => s.commands)}
+          />
 
           {!priv && (
             <DidItWork

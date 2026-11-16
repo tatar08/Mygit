@@ -175,6 +175,7 @@ export function NavLinks({ repo, stars, extension }: { repo: string | null; star
 
   const navItems = [
     { href: "/hot", label: t("hotRepo") },
+    { href: "/freebies", label: "🎁 Freebies" },
     { href: "/shelf", label: t("shelf") },
     { href: "/private", label: t("private"), short: t("privateShort") },
     { href: "/developers", label: t("api"), short: t("apiShort") },

@@ -369,6 +369,26 @@ async function pickReal(items: SearchItem[], picked: string[], seen: Set<string>
 const search = (q: string, page = 1, sort: "stars" | "forks" = "stars") =>
   gh<{ items: SearchItem[] }>(`/search/repositories?q=${encodeURIComponent(`${q} fork:false archived:false`)}&sort=${sort}&order=desc&per_page=50&page=${page}`);
 
+export async function searchRepositories(q: string, limit = 12): Promise<HotRepoItem[]> {
+  const { items } = await search(q, 1, "stars");
+  const out: HotRepoItem[] = [];
+  for (const r of items) {
+    if (out.length >= limit) break;
+    if (!isSoftware(r) || BAIT.test(`${r.full_name} ${r.description ?? ""}`)) continue;
+    out.push({
+      fullName: r.full_name,
+      description: r.description ?? null,
+      stars: r.stargazers_count ?? 0,
+      forks: r.forks_count ?? 0,
+      language: r.language ?? null,
+      topics: (r.topics ?? []).slice(0, 4),
+      htmlUrl: r.html_url ?? `https://github.com/${r.full_name}`,
+      createdAt: r.created_at ?? "",
+    });
+  }
+  return out;
+}
+
 // GitHub has no API for its Trending page. The closest official signal: new repos gathering stars fast, in two
 // windows so this week's breakouts and last month's steady climbers both show up.
 export async function risingRepos(limit = 30): Promise<string[]> {

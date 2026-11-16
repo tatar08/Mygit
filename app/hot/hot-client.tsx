@@ -12,6 +12,15 @@ export type HotRepoWithStatus = HotRepoItem & {
   installed: boolean;
 };
 
+type AiSummary = {
+  summary: string;
+  whatItDoes: string;
+  bestFor: string;
+  tech: string;
+};
+
+const SUMMARY_STORAGE_KEY = "gitmanual-ai-summaries";
+
 const CATEGORIES: { id: HotCategory; labelKey?: "hotCatAll" | "hotCatAi" | "hotCatSelfHosted"; staticLabel?: string }[] = [
   { id: "all", labelKey: "hotCatAll" },
   { id: "ai", labelKey: "hotCatAi" },
@@ -31,7 +40,9 @@ export function HotClient({
   initialFetchedAt: number;
   initialError?: string | null;
 }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
+  const th = locale === "th";
+
   const [items, setItems] = useState<HotRepoWithStatus[]>(initialItems);
   const [period, setPeriod] = useState<HotPeriod>("week");
   const [category, setCategory] = useState<HotCategory>("all");
@@ -40,6 +51,14 @@ export function HotClient({
   const [error, setError] = useState<string | null>(initialError ?? null);
   const [savingMap, setSavingMap] = useState<Record<string, boolean>>({});
   const [fetchedAt, setFetchedAt] = useState<number>(initialFetchedAt);
+
+  // AI Summary & AI Search states
+  const [summaries, setSummaries] = useState<Record<string, AiSummary>>({});
+  const [summarizingMap, setSummarizingMap] = useState<Record<string, boolean>>({});
+  const [summarizingAll, setSummarizingAll] = useState(false);
+  const [aiQuery, setAiQuery] = useState("");
+  const [aiSearching, setAiSearching] = useState(false);
+  const [aiStrategy, setAiStrategy] = useState<string | null>(null);
 
   const mergeLocalStatus = (list: HotRepoWithStatus[]): HotRepoWithStatus[] => {
     const local = getLocalShelf();
@@ -58,11 +77,23 @@ export function HotClient({
 
   useEffect(() => {
     setItems((prev) => mergeLocalStatus(prev));
+    try {
+      const raw = localStorage.getItem(SUMMARY_STORAGE_KEY);
+      if (raw) setSummaries(JSON.parse(raw));
+    } catch {}
   }, []);
+
+  const persistSummaries = (next: Record<string, AiSummary>) => {
+    setSummaries(next);
+    try {
+      localStorage.setItem(SUMMARY_STORAGE_KEY, JSON.stringify(next));
+    } catch {}
+  };
 
   const loadHot = async (nextPeriod: HotPeriod, nextCategory: HotCategory, isRefresh = false) => {
     setPeriod(nextPeriod);
     setCategory(nextCategory);
+    setAiStrategy(null);
     if (isRefresh) setRefreshing(true);
     else setLoading(true);
     setError(null);
@@ -82,6 +113,83 @@ export function HotClient({
     } finally {
       setLoading(false);
       setRefreshing(false);
+    }
+  };
+
+  const handleAiSearch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!aiQuery.trim() || aiSearching) return;
+    setAiSearching(true);
+    setError(null);
+    setAiStrategy(null);
+    try {
+      const res = await fetch("/api/ai/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: aiQuery.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "AI search failed");
+      setItems(mergeLocalStatus(data.items ?? []));
+      setAiStrategy(data.strategyTh || null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "AI search failed");
+    } finally {
+      setAiSearching(false);
+    }
+  };
+
+  const handleSummarizeOne = async (r: HotRepoWithStatus) => {
+    if (summarizingMap[r.fullName]) return;
+    setSummarizingMap((prev) => ({ ...prev, [r.fullName]: true }));
+    setError(null);
+    try {
+      const res = await fetch("/api/ai/summarize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items: [{ fullName: r.fullName, description: r.description, language: r.language, topics: r.topics }],
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to summarize");
+      if (data.summaries) {
+        persistSummaries({ ...summaries, ...data.summaries });
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to summarize");
+    } finally {
+      setSummarizingMap((prev) => ({ ...prev, [r.fullName]: false }));
+    }
+  };
+
+  const handleSummarizeAll = async () => {
+    const missing = items.filter((r) => !summaries[r.fullName]).slice(0, 9);
+    if (!missing.length || summarizingAll) return;
+    setSummarizingAll(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/ai/summarize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items: missing.map((r) => ({
+            fullName: r.fullName,
+            description: r.description,
+            language: r.language,
+            topics: r.topics,
+          })),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to summarize");
+      if (data.summaries) {
+        persistSummaries({ ...summaries, ...data.summaries });
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to summarize");
+    } finally {
+      setSummarizingAll(false);
     }
   };
 
@@ -134,7 +242,21 @@ export function HotClient({
           <h1 className="display-md">{t("hotRepoTitle")}</h1>
           <p className="lead">{t("hotRepoDesc")}</p>
         </div>
-        <div className="hot-head-actions">
+        <div className="hot-head-actions" style={{ flexWrap: "wrap" }}>
+          <button
+            type="button"
+            className="btn btn-go btn-sm"
+            onClick={handleSummarizeAll}
+            disabled={summarizingAll || loading || items.length === 0}
+          >
+            {summarizingAll
+              ? th
+                ? "✨ กำลังสรุปไทย..."
+                : "✨ Summarizing..."
+              : th
+                ? "✨ AI สรุปไทย (9 อันดับแรก)"
+                : "✨ AI Summarize Top 9"}
+          </button>
           <button
             type="button"
             className="btn btn-sm hot-refresh-btn"
@@ -151,6 +273,29 @@ export function HotClient({
         </div>
       </header>
 
+      <form className="ai-search-bar" onSubmit={handleAiSearch}>
+        <input
+          type="text"
+          value={aiQuery}
+          onChange={(e) => setAiQuery(e.target.value)}
+          placeholder={
+            th
+              ? "✨ ค้นหาด้วย AI เช่น: ระบบ POS ร้านกาแฟฟรี, AI Agent ไม่ต้องใช้ GPU, self-hosted notes..."
+              : "✨ AI Repo Finder: e.g. free open-source coffee shop POS, local AI agent without GPU..."
+          }
+          className="ai-search-input"
+        />
+        <button type="submit" className="btn btn-go btn-sm" disabled={aiSearching || !aiQuery.trim()}>
+          {aiSearching ? (th ? "กำลังค้นหา..." : "Searching...") : th ? "✨ ค้นหาด้วย AI" : "✨ AI Search"}
+        </button>
+      </form>
+
+      {aiStrategy && (
+        <p className="passcode-success" style={{ marginBottom: 16 }}>
+          ✨ {aiStrategy}
+        </p>
+      )}
+
       <div className="hot-filters-bar">
         <div className="hot-filter-group" role="group" aria-label="Time period">
           {(
@@ -166,7 +311,7 @@ export function HotClient({
             <button
               key={id}
               type="button"
-              className={`hot-pill ${period === id ? "active" : ""}`}
+              className={`hot-pill ${period === id && !aiStrategy ? "active" : ""}`}
               onClick={() => loadHot(id, category)}
               disabled={loading}
             >
@@ -182,7 +327,7 @@ export function HotClient({
               <button
                 key={c.id}
                 type="button"
-                className={`hot-pill ${category === c.id ? "active" : ""}`}
+                className={`hot-pill ${category === c.id && !aiStrategy ? "active" : ""}`}
                 onClick={() => loadHot(period, c.id)}
                 disabled={loading}
               >
@@ -202,7 +347,7 @@ export function HotClient({
         </div>
       )}
 
-      {loading ? (
+      {loading || aiSearching ? (
         <div className="hot-loading-grid">
           {Array.from({ length: 6 }).map((_, idx) => (
             <div key={idx} className="shelf-card hot-skeleton" />
@@ -213,6 +358,9 @@ export function HotClient({
           {items.map((r, index) => {
             const [owner, name] = r.fullName.split("/");
             const isSaving = Boolean(savingMap[r.fullName]);
+            const isSummarizing = Boolean(summarizingMap[r.fullName]);
+            const aiSum = summaries[r.fullName];
+
             return (
               <li key={r.fullName}>
                 <div className={`shelf-card ${r.installed ? "is-installed" : ""}`}>
@@ -246,6 +394,15 @@ export function HotClient({
                     {r.description && (
                       <span className="shelf-desc">{r.description.replace(/:[a-z0-9_+-]+:\s*/g, "")}</span>
                     )}
+
+                    {aiSum && (
+                      <div className="ai-summary-box">
+                        <p><strong>✨ สรุป:</strong> {aiSum.summary}</p>
+                        <p><strong>🛠️ เอาไว้ทำ:</strong> {aiSum.whatItDoes}</p>
+                        <p><strong>🎯 เหมาะกับ:</strong> {aiSum.bestFor}</p>
+                      </div>
+                    )}
+
                     <span className="shelf-spec">
                       <span className="hot-topics">
                         {r.language && <span className="chip">{r.language}</span>}
@@ -259,7 +416,7 @@ export function HotClient({
                   </Link>
 
                   <div className="shelf-foot">
-                    <div className="shelf-foot-left">
+                    <div className="shelf-foot-left" style={{ gap: 6 }}>
                       {!r.saved && (
                         <button
                           type="button"
@@ -268,6 +425,16 @@ export function HotClient({
                           disabled={isSaving}
                         >
                           {isSaving ? "..." : t("hotSaveBtn")}
+                        </button>
+                      )}
+                      {!aiSum && (
+                        <button
+                          type="button"
+                          className="shelf-btn-installed"
+                          onClick={() => handleSummarizeOne(r)}
+                          disabled={isSummarizing}
+                        >
+                          {isSummarizing ? "..." : "✨ สรุปไทย"}
                         </button>
                       )}
                     </div>
@@ -293,4 +460,3 @@ export function HotClient({
     </div>
   );
 }
-
