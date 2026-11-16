@@ -334,52 +334,79 @@ function PasscodeModal({ onClose }: { onClose: () => void }) {
     <div className="add-modal-backdrop" onClick={onClose}>
       <div
         className="add-modal-box"
-        style={{ maxWidth: 440 }}
+        style={{ maxWidth: 460, padding: "24px 26px", gap: 0 }}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
       >
-        <div className="add-modal-head">
-          <div className="add-modal-title">
-            <h3>🔑 {t("passcodeModalTitle")}</h3>
-          </div>
+        <div className="settings-card-head">
+          <h2>🔑 {t("passcodeModalTitle")}</h2>
           <button type="button" className="add-modal-close" onClick={onClose} aria-label="Close">
             ×
           </button>
         </div>
 
-        <form onSubmit={handleChangePasscode} className="add-modal-form">
-          <input
-            type="password"
-            value={currentPasscode}
-            onChange={(e) => setCurrentPasscode(e.target.value)}
-            placeholder={t("currentPasscode")}
-            className="add-modal-input"
-            required
-          />
-          <input
-            type="password"
-            value={newPasscode}
-            onChange={(e) => setNewPasscode(e.target.value)}
-            placeholder={t("newPasscode")}
-            className="add-modal-input"
-            minLength={4}
-            required
-          />
-          <input
-            type="password"
-            value={confirmPasscode}
-            onChange={(e) => setConfirmPasscode(e.target.value)}
-            placeholder={t("confirmPasscode")}
-            className="add-modal-input"
-            minLength={4}
-            required
-          />
+        <form onSubmit={handleChangePasscode}>
+          <div className="settings-field">
+            <label htmlFor="pm_current" className="settings-field-label">
+              {t("currentPasscode")}
+            </label>
+            <input
+              id="pm_current"
+              type="password"
+              value={currentPasscode}
+              onChange={(e) => setCurrentPasscode(e.target.value)}
+              placeholder="••••••"
+              className="settings-input"
+              required
+            />
+          </div>
 
-          {error && <p className="add-modal-error">{error}</p>}
-          {success && <p className="passcode-success">{success}</p>}
+          <div className="settings-field">
+            <label htmlFor="pm_new" className="settings-field-label">
+              {t("newPasscode")}
+            </label>
+            <input
+              id="pm_new"
+              type="password"
+              value={newPasscode}
+              onChange={(e) => setNewPasscode(e.target.value)}
+              placeholder="••••••"
+              className="settings-input"
+              minLength={4}
+              required
+            />
+          </div>
 
-          <div className="add-modal-actions" style={{ justifyContent: "space-between", flexWrap: "wrap" }}>
+          <div className="settings-field">
+            <label htmlFor="pm_confirm" className="settings-field-label">
+              {t("confirmPasscode")}
+            </label>
+            <input
+              id="pm_confirm"
+              type="password"
+              value={confirmPasscode}
+              onChange={(e) => setConfirmPasscode(e.target.value)}
+              placeholder="••••••"
+              className="settings-input"
+              minLength={4}
+              required
+            />
+          </div>
+
+          {error && (
+            <div className="unlock-error" style={{ marginBottom: 12 }}>
+              <span className="unlock-error-tag">ERROR</span>
+              <span>{error}</span>
+            </div>
+          )}
+          {success && (
+            <p className="passcode-success" style={{ marginBottom: 12 }}>
+              {success}
+            </p>
+          )}
+
+          <div className="settings-test-row" style={{ justifyContent: "space-between", marginTop: 8 }}>
             <button
               type="button"
               className="btn btn-sm passcode-lock-btn"
