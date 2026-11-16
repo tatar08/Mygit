@@ -64,8 +64,21 @@ export async function askAiText(
   }
 
   if (ollamaUrl) {
-    const model = process.env.OLLAMA_MODEL?.trim() || "qwen2.5:7b";
-    const res = await fetch(`${ollamaUrl.replace(/\/$/, "")}/api/chat`, {
+    const base = ollamaUrl.replace(/\/$/, "");
+    let model = process.env.OLLAMA_MODEL?.trim() || "";
+    if (!model) {
+      try {
+        const tagsRes = await fetch(`${base}/api/tags`, { cache: "no-store" });
+        if (tagsRes.ok) {
+          const tags = (await tagsRes.json()) as { models?: Array<{ name: string }> };
+          const names = (tags.models ?? []).map((m) => m.name).filter((n) => !/embed/i.test(n));
+          const preferred = ["gemma4:12b", "qwen3.8:27b", "qwen3-coder:30b", "llama3:latest", "deepseek-v4-flash:cloud"];
+          model = preferred.find((p) => names.includes(p)) || names[0] || "llama3:latest";
+        }
+      } catch {}
+      if (!model) model = "llama3:latest";
+    }
+    const res = await fetch(`${base}/api/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
