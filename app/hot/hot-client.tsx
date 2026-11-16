@@ -131,7 +131,8 @@ export function HotClient({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "AI search failed");
       setItems(mergeLocalStatus(data.items ?? []));
-      setAiStrategy(data.strategyTh || null);
+      const qStr = Array.isArray(data.queries) && data.queries.length ? ` [GitHub: ${data.queries.join(" | ")}]` : "";
+      setAiStrategy(data.strategyTh ? `${data.strategyTh}${qStr}` : qStr || null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "AI search failed");
     } finally {
