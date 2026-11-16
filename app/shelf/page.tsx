@@ -3,7 +3,7 @@ import Link from "next/link";
 import { browseRepos, isDbAvailable, SHELF_PAGE, type ShelfQuery } from "@/lib/db";
 import { CarbonAd } from "../carbon";
 import { ShelfFilters } from "./filters";
-import { ShelfList } from "./shelf-list";
+import { ShelfHeader, ShelfList } from "./shelf-list";
 
 const DESCRIPTION = "Browse the open-source repos people have set up with gitmanual, by stars, language and difficulty.";
 
@@ -26,6 +26,7 @@ const SORTS = ["stars", "recent", "popular", "worked"] as const;
 
 function parse(p: Params): ShelfQuery {
   const minStars = Number(p.min);
+  const installed = p.installed === "1" ? true : p.installed === "0" ? false : undefined;
   return {
     q: p.q?.trim().slice(0, 80) || undefined,
     language: p.lang || undefined,
@@ -34,6 +35,7 @@ function parse(p: Params): ShelfQuery {
     sort: SORTS.includes(p.sort as (typeof SORTS)[number]) ? (p.sort as ShelfQuery["sort"]) : "stars",
     // ?sort=rising was the old way to ask for it.
     rising: p.rising === "1" || p.sort === "rising" || undefined,
+    installed,
     page: Math.max(1, Number(p.page) || 1),
   };
 }
@@ -51,7 +53,9 @@ export default async function ShelfPage({ searchParams }: { searchParams: Promis
     next.set("page", String(n));
     return `/shelf?${next}`;
   };
-  const filtered = Boolean(query.q || query.language || query.difficulty || query.minStars || query.rising);
+  const filtered = Boolean(
+    query.q || query.language || query.difficulty || query.minStars || query.rising || query.installed !== undefined,
+  );
   // The All / Rising switch keeps the other filters and starts again at page 1.
   const viewHref = (risingOnly: boolean) => {
     const next = new URLSearchParams(Object.entries(params).filter((e): e is [string, string] => Boolean(e[1])));
@@ -65,24 +69,13 @@ export default async function ShelfPage({ searchParams }: { searchParams: Promis
   return (
     <div className="wrap shelf-page">
       <header className="shelf-page-head">
-        <div>
-          <p className="eyebrow">The shelf</p>
-          <h1 className="display-md">What people are setting up</h1>
-          <p className="lead">
-            Every repo looked up here. Open one for its manual, or browse the <Link href="/lists">lists</Link>.
-          </p>
-          {/* Hidden when nothing is rising, unless that view is open (so it can be switched back). */}
-          {(rising > 0 || query.rising) && (
-            <nav className="view-switch" aria-label="Show">
-              <Link href={viewHref(false)} aria-current={!query.rising ? "page" : undefined} scroll={false}>
-                All repos <span className="count">{all.toLocaleString()}</span>
-              </Link>
-              <Link href={viewHref(true)} aria-current={query.rising ? "page" : undefined} scroll={false}>
-                Rising this week <span className="count">{rising}</span>
-              </Link>
-            </nav>
-          )}
-        </div>
+        <ShelfHeader
+          rising={rising}
+          all={all}
+          isRisingView={Boolean(query.rising)}
+          allHref={viewHref(false)}
+          risingHref={viewHref(true)}
+        />
         <CarbonAd />
       </header>
 

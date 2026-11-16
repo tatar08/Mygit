@@ -1,10 +1,47 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { RepoCard, ShelfQuery } from "@/lib/db";
-import { getLocalShelf } from "@/lib/local-shelf";
+import { useI18n } from "@/lib/i18n";
+import { getLocalShelf, saveToLocalShelf } from "@/lib/local-shelf";
 import { ShelfCard } from "../cards";
+
+export function ShelfHeader({
+  rising,
+  all,
+  isRisingView,
+  allHref,
+  risingHref,
+}: {
+  rising: number;
+  all: number;
+  isRisingView: boolean;
+  allHref: string;
+  risingHref: string;
+}) {
+  const { t } = useI18n();
+  return (
+    <div>
+      <p className="eyebrow">{t("shelfPageEyebrow")}</p>
+      <h1 className="display-md">{t("shelfPageTitle")}</h1>
+      <p className="lead">
+        {t("shelfPageDesc")}
+        <Link href="/lists">{t("shelfPageLists")}</Link>.
+      </p>
+      {(rising > 0 || isRisingView) && (
+        <nav className="view-switch" aria-label="Show">
+          <Link href={allHref} aria-current={!isRisingView ? "page" : undefined} scroll={false}>
+            {t("shelfAllRepos")} <span className="count">{all.toLocaleString()}</span>
+          </Link>
+          <Link href={risingHref} aria-current={isRisingView ? "page" : undefined} scroll={false}>
+            {t("shelfRisingWeek")} <span className="count">{rising}</span>
+          </Link>
+        </nav>
+      )}
+    </div>
+  );
+}
 
 export function ShelfList({
   dbAvailable,
@@ -19,8 +56,11 @@ export function ShelfList({
   query: ShelfQuery;
   filtered: boolean;
 }) {
+  const { t } = useI18n();
   const [localRepos, setLocalRepos] = useState<RepoCard[] | null>(null);
   const [removedKeys, setRemovedKeys] = useState<Set<string>>(new Set());
+  const [importMsg, setImportMsg] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!dbAvailable) {
@@ -52,6 +92,9 @@ export function ShelfList({
     if (query.minStars) {
       list = list.filter((r) => r.stars >= query.minStars!);
     }
+    if (query.installed !== undefined) {
+      list = list.filter((r) => Boolean(r.installed) === query.installed);
+    }
 
     const sort = query.sort ?? "stars";
     list = [...list].sort((a, b) => {
@@ -67,7 +110,69 @@ export function ShelfList({
   const handleRemove = (fullName: string) => {
     setRemovedKeys((prev) => new Set(prev).add(fullName.toLowerCase()));
     if (localRepos) {
-      setLocalRepos((prev) => (prev ? prev.filter((r) => r.fullName.toLowerCase() !== fullName.toLowerCase()) : prev));
+      setLocalRepos((prev) =>
+        prev ? prev.filter((r) => r.fullName.toLowerCase() !== fullName.toLowerCase()) : prev,
+      );
+    }
+  };
+
+  const handleExportJson = () => {
+    const data = dbAvailable ? serverRepos : getLocalShelf();
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `mygit-shelf-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportJson = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImportMsg(null);
+
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      const arr: unknown[] = Array.isArray(parsed) ? parsed : [];
+      let count = 0;
+
+      for (const item of arr) {
+        if (!item || typeof item !== "object") continue;
+        const rec = item as Partial<RepoCard>;
+        if (typeof rec.fullName !== "string" || !rec.fullName.includes("/")) continue;
+
+        saveToLocalShelf({ ...rec, fullName: rec.fullName });
+        if (dbAvailable) {
+          const [owner, repo] = rec.fullName.split("/");
+          await fetch("/api/shelf", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              owner,
+              repo,
+              fullName: rec.fullName,
+              description: rec.description ?? null,
+              stars: rec.stars ?? 0,
+              language: rec.language ?? null,
+              installed: Boolean(rec.installed),
+            }),
+          }).catch(() => {});
+        }
+        count++;
+      }
+
+      if (!dbAvailable) {
+        setLocalRepos(getLocalShelf());
+      } else {
+        window.location.reload();
+      }
+      setImportMsg(t("shelfImportSuccess").replace("{n}", String(count)));
+    } catch {
+      setImportMsg(t("shelfImportInvalid"));
+    } finally {
+      if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
 
@@ -75,15 +180,39 @@ export function ShelfList({
 
   return (
     <>
-      <p className="shelf-count" aria-live="polite">
-        {displayTotal.toLocaleString()} {displayTotal === 1 ? "repo" : "repos"}
-        {filtered && (
-          <>
-            {" · "}
-            <Link href="/shelf">Clear filters</Link>
-          </>
-        )}
-      </p>
+      <div className="shelf-toolbar">
+        <p className="shelf-count" aria-live="polite" style={{ margin: 0 }}>
+          {displayTotal.toLocaleString()}{" "}
+          {displayTotal === 1 ? t("shelfRepoSingular") : t("shelfRepoPlural")}
+          {filtered && (
+            <>
+              {" · "}
+              <Link href="/shelf">{t("shelfClearFilters")}</Link>
+            </>
+          )}
+        </p>
+
+        <div className="shelf-json-actions">
+          {importMsg && <span className="shelf-import-msg">{importMsg}</span>}
+          <button type="button" className="btn btn-sm shelf-json-btn" onClick={handleExportJson}>
+            ↓ {t("shelfExportJson")}
+          </button>
+          <button
+            type="button"
+            className="btn btn-sm shelf-json-btn"
+            onClick={() => fileInputRef.current?.click()}
+          >
+            ↑ {t("shelfImportJson")}
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="application/json,.json"
+            onChange={handleImportJson}
+            style={{ display: "none" }}
+          />
+        </div>
+      </div>
 
       {displayedRepos.length ? (
         <ul className="shelf-grid">
@@ -95,18 +224,13 @@ export function ShelfList({
         </ul>
       ) : (
         <div className="panel shelf-empty">
-          <h2>Nothing on this shelf yet</h2>
-          <p className="note">
-            {filtered
-              ? "No repos match these filters. Try fewer stars or another language."
-              : "Look up a repo and it shows up here."}
-          </p>
+          <h2>{t("shelfEmptyTitle")}</h2>
+          <p className="note">{filtered ? t("shelfEmptyFilteredDesc") : t("shelfEmptyDesc")}</p>
           <Link className="btn btn-go btn-sm" href={filtered ? "/shelf" : "/"}>
-            {filtered ? "Clear filters" : "Look up a repo"}
+            {filtered ? t("shelfClearFilters") : t("shelfLookupBtn")}
           </Link>
         </div>
       )}
     </>
   );
 }
-

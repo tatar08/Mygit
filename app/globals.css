@@ -2271,3 +2271,33 @@ button.fb-media { width: 100%; padding: 0; border: 0; border-block: 1.5px solid 
 .passcode-lock-btn:hover {
   background: #fecaca;
 }
+.shelf-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.shelf-json-actions {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.shelf-json-btn {
+  background: var(--sheet);
+  color: var(--ink);
+  border: 1.5px solid var(--ink);
+  box-shadow: 2px 2px 0 var(--ink);
+  height: 32px;
+  padding: 0 12px;
+  font: 600 12px var(--sans);
+}
+.shelf-json-btn:hover {
+  background: var(--paper);
+}
+.shelf-import-msg {
+  font: 600 12px var(--sans);
+  color: #15803d;
+}

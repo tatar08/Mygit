@@ -12,6 +12,24 @@ import {
 } from "@/lib/passcode";
 
 const SETTING_KEY = "site_passcode";
+const MAX_FAILURES = 5;
+const LOCK_DURATION_MS = 60 * 1000;
+
+type RateEntry = { failures: number; lockedUntil: number };
+const rateStore = globalThis as typeof globalThis & {
+  passcodeRateMap?: Map<string, RateEntry>;
+};
+
+function getClientIp(req: Request): string {
+  const fwd = req.headers.get("x-forwarded-for");
+  if (fwd) return fwd.split(",")[0].trim();
+  return req.headers.get("x-real-ip")?.trim() || "local";
+}
+
+function getRateMap(): Map<string, RateEntry> {
+  rateStore.passcodeRateMap ??= new Map();
+  return rateStore.passcodeRateMap;
+}
 
 function constantTimeEqual(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
@@ -40,14 +58,40 @@ export async function GET() {
 
 export async function POST(req: Request) {
   try {
+    const ip = getClientIp(req);
+    const rateMap = getRateMap();
+    const now = Date.now();
+    const entry = rateMap.get(ip);
+
+    if (entry && entry.lockedUntil > now) {
+      const retryAfter = Math.ceil((entry.lockedUntil - now) / 1000);
+      return NextResponse.json(
+        { ok: false, error: `Too many failed attempts. Try again in ${retryAfter}s.`, retryAfter },
+        { status: 429 },
+      );
+    }
+
     const { passcode: expected } = await resolveActivePasscode();
     const body = await req.json().catch(() => ({}));
     const submitted = typeof body.passcode === "string" ? body.passcode.trim() : "";
 
     if (!submitted || !constantTimeEqual(submitted, expected)) {
-      return NextResponse.json({ ok: false, error: "Invalid passcode" }, { status: 401 });
+      const failures = (entry && entry.lockedUntil <= now ? entry.failures : 0) + 1;
+      if (failures >= MAX_FAILURES) {
+        rateMap.set(ip, { failures: 0, lockedUntil: now + LOCK_DURATION_MS });
+        return NextResponse.json(
+          { ok: false, error: "Too many failed attempts. Locked for 60s.", retryAfter: 60 },
+          { status: 429 },
+        );
+      }
+      rateMap.set(ip, { failures, lockedUntil: 0 });
+      return NextResponse.json(
+        { ok: false, error: "Invalid passcode", remaining: MAX_FAILURES - failures },
+        { status: 401 },
+      );
     }
 
+    rateMap.delete(ip);
     const jwt = await createAccessJwt(expected);
     const res = NextResponse.json({ ok: true });
     res.cookies.set(PASSCODE_COOKIE, jwt, {

@@ -57,7 +57,12 @@ export function UnlockClient({
         return;
       }
 
-      setError(t("unlockError"));
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 429 && data.error) {
+        setError(data.error);
+      } else {
+        setError(t("unlockError"));
+      }
       triggerShake();
       if (useBoxes) {
         setDigits(Array(pinLength).fill(""));
