@@ -164,6 +164,14 @@ export function NavLinks({ repo, stars, extension }: { repo: string | null; star
   const path = usePathname();
   const { t } = useI18n();
 
+  if (path === "/unlock") {
+    return (
+      <nav className="nav-links" aria-label="Language">
+        <LanguageToggle />
+      </nav>
+    );
+  }
+
   const navItems = [
     { href: "/hot", label: t("hotRepo") },
     { href: "/shelf", label: t("shelf") },

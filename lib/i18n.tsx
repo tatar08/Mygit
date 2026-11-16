@@ -125,6 +125,16 @@ export const translations = {
     contact: "Contact",
     disclaimer: "Reads public data from GitHub. Always read commands before you run them.",
 
+    // Passcode Gate
+    unlockBadge: "ACCESS REQUIRED",
+    unlockTitle: "Enter Passcode",
+    unlockDesc: "This private workshop is locked. Enter your passcode to continue.",
+    unlockPlaceholder: "Enter passcode...",
+    unlockButton: "Unlock Manual →",
+    unlocking: "Unlocking...",
+    unlockError: "Incorrect passcode. Please try again.",
+    unlockHint: "Protected by workspace passcode",
+
     // Language switch
     langName: "English",
     switchTo: "ภาษาไทย",
@@ -249,6 +259,16 @@ export const translations = {
     privacy: "ความเป็นส่วนตัว",
     contact: "ติดต่อเรา",
     disclaimer: "อ่านข้อมูลสาธารณะจาก GitHub โปรดตรวจสอบคำสั่งทุกครั้งก่อนรันในเครื่อง",
+
+    // Passcode Gate
+    unlockBadge: "ACCESS REQUIRED",
+    unlockTitle: "กรอกรหัสผ่าน",
+    unlockDesc: "พื้นที่ส่วนตัวนี้ถูกล็อกอยู่ กรุณากรอกรหัสผ่านเพื่อเข้าใช้งาน",
+    unlockPlaceholder: "กรอกรหัสผ่าน...",
+    unlockButton: "ปลดล็อกคู่มือ →",
+    unlocking: "กำลังตรวจสอบ...",
+    unlockError: "รหัสผ่านไม่ถูกต้อง กรุณาลองใหม่อีกครั้ง",
+    unlockHint: "ป้องกันด้วยรหัสผ่านส่วนตัว",
 
     // Language switch
     langName: "ภาษาไทย",
