@@ -2441,6 +2441,8 @@ button.fb-media { width: 100%; padding: 0; border: 0; border-block: 1.5px solid 
 }
 .settings-provider-tabs {
   display: inline-flex;
+  flex-wrap: wrap;
+  max-width: 100%;
   gap: 6px;
   padding: 4px;
   margin-bottom: 18px;
@@ -2538,6 +2540,9 @@ button.fb-media { width: 100%; padding: 0; border: 0; border-block: 1.5px solid 
 @media (max-width: 640px) {
   .settings-row-2 { grid-template-columns: 1fr; }
   .settings-card { padding: 18px 18px; }
+  .settings-provider-tabs { width: 100%; }
+  .settings-provider-tab { flex: 1 1 auto; text-align: center; }
+  .ai-repo-panel { padding: 16px; }
 }
 
 /* AI Repo Chat (Ask about this repo) */
